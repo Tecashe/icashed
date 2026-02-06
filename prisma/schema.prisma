@@ -1,0 +1,212 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Users & Auth ────────────────────────────────────────────
+
+model User {
+  id             String    @id @default(cuid())
+  email          String    @unique
+  name           String?
+  passwordHash   String    @map("password_hash")
+  role           UserRole  @default(COMMUTER)
+  phone          String?
+  avatarUrl      String?   @map("avatar_url")
+  emailVerified  Boolean   @default(false) @map("email_verified")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  sessions       Session[]
+  vehicles       Vehicle[]
+  savedRoutes    SavedRoute[]
+  reports        Report[]
+
+  @@map("users")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  token     String   @unique
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@map("sessions")
+}
+
+enum UserRole {
+  COMMUTER
+  OPERATOR
+  ADMIN
+}
+
+// ─── Routes & Stages ─────────────────────────────────────────
+
+model Route {
+  id          String   @id @default(cuid())
+  name        String
+  code        String   @unique
+  description String?
+  origin      String
+  destination String
+  county      String
+  isActive    Boolean  @default(true) @map("is_active")
+  color       String   @default("#10B981")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  stages     Stage[]
+  vehicles   VehicleRoute[]
+  savedBy    SavedRoute[]
+  routePath  RoutePath[]
+
+  @@map("routes")
+}
+
+model Stage {
+  id        String  @id @default(cuid())
+  name      String
+  routeId   String  @map("route_id")
+  latitude  Float
+  longitude Float
+  order     Int
+  isTerminal Boolean @default(false) @map("is_terminal")
+
+  route Route @relation(fields: [routeId], references: [id], onDelete: Cascade)
+
+  @@unique([routeId, order])
+  @@map("stages")
+}
+
+model RoutePath {
+  id        String @id @default(cuid())
+  routeId   String @map("route_id")
+  latitude  Float
+  longitude Float
+  order     Int
+
+  route Route @relation(fields: [routeId], references: [id], onDelete: Cascade)
+
+  @@map("route_paths")
+}
+
+// ─── Vehicles ────────────────────────────────────────────────
+
+model Vehicle {
+  id            String        @id @default(cuid())
+  plateNumber   String        @unique @map("plate_number")
+  nickname      String?
+  type          VehicleType   @default(MATATU)
+  capacity      Int           @default(14)
+  ownerId       String        @map("owner_id")
+  isActive      Boolean       @default(true) @map("is_active")
+  isPremium     Boolean       @default(false) @map("is_premium")
+  rating        Float         @default(0)
+  totalTrips    Int           @default(0) @map("total_trips")
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+
+  owner         User          @relation(fields: [ownerId], references: [id])
+  routes        VehicleRoute[]
+  images        VehicleImage[]
+  positions     VehiclePosition[]
+
+  @@map("vehicles")
+}
+
+model VehicleImage {
+  id        String   @id @default(cuid())
+  vehicleId String   @map("vehicle_id")
+  url       String
+  caption   String?
+  isPrimary Boolean  @default(false) @map("is_primary")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  @@map("vehicle_images")
+}
+
+model VehicleRoute {
+  id        String @id @default(cuid())
+  vehicleId String @map("vehicle_id")
+  routeId   String @map("route_id")
+
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  route   Route   @relation(fields: [routeId], references: [id], onDelete: Cascade)
+
+  @@unique([vehicleId, routeId])
+  @@map("vehicle_routes")
+}
+
+model VehiclePosition {
+  id        String   @id @default(cuid())
+  vehicleId String   @map("vehicle_id")
+  latitude  Float
+  longitude Float
+  speed     Float    @default(0)
+  heading   Float    @default(0)
+  timestamp DateTime @default(now())
+
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  @@index([vehicleId, timestamp])
+  @@map("vehicle_positions")
+}
+
+enum VehicleType {
+  MATATU
+  BUS
+  BODA
+  TUK_TUK
+}
+
+// ─── User Data ───────────────────────────────────────────────
+
+model SavedRoute {
+  id      String @id @default(cuid())
+  userId  String @map("user_id")
+  routeId String @map("route_id")
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  route Route @relation(fields: [routeId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, routeId])
+  @@map("saved_routes")
+}
+
+model Report {
+  id          String     @id @default(cuid())
+  userId      String     @map("user_id")
+  type        ReportType
+  description String
+  latitude    Float?
+  longitude   Float?
+  status      ReportStatus @default(PENDING)
+  createdAt   DateTime     @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("reports")
+}
+
+enum ReportType {
+  SAFETY
+  ROUTE_ISSUE
+  VEHICLE_ISSUE
+  GENERAL
+}
+
+enum ReportStatus {
+  PENDING
+  REVIEWED
+  RESOLVED
+}
