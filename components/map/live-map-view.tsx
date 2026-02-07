@@ -13,14 +13,19 @@ import {
   Loader2,
   Wifi,
   WifiOff,
-  ChevronUp,
-  ChevronDown,
+  Target,
+  ArrowRight,
+  Timer,
+  CircleDot,
+  CheckCircle2,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { Progress } from "@/components/ui/progress"
 import { useRealtimePositions } from "@/hooks/use-realtime-positions"
-import { useRoutes, type LivePosition } from "@/hooks/use-data"
+import { useRoutes, type LivePosition, type RouteData } from "@/hooks/use-data"
+import { useVehicleProgress, type RouteWithStages } from "@/hooks/use-vehicle-progress"
 import { VEHICLE_TYPE_LABELS } from "@/lib/constants"
 import { cn } from "@/lib/utils"
 import type { MapVehicle, MapRoute } from "@/components/map/leaflet-map"
@@ -57,6 +62,40 @@ export function LiveMapView() {
     )
   }, [selectedRouteId, allPositions])
 
+  // Find selected route data for progress calculation
+  const selectedVehicleRoutes = useMemo((): RouteWithStages[] => {
+    if (!selectedVehicle) return []
+
+    return selectedVehicle.routes.map(vr => {
+      const routeData = routes.find(r => r.id === vr.id)
+      return {
+        id: vr.id,
+        name: vr.name,
+        color: vr.color,
+        stages: routeData?.stages?.map(s => ({
+          id: s.id,
+          name: s.name,
+          latitude: s.latitude,
+          longitude: s.longitude,
+          order: s.order,
+          isTerminal: s.isTerminal,
+        })) || [],
+      }
+    }).filter(r => r.stages.length > 0)
+  }, [selectedVehicle, routes])
+
+  // Calculate progress for selected vehicle
+  const selectedVehiclePosition = selectedVehicle ? {
+    latitude: selectedVehicle.position.latitude,
+    longitude: selectedVehicle.position.longitude,
+  } : null
+
+  const vehicleProgress = useVehicleProgress(
+    selectedVehiclePosition,
+    selectedVehicleRoutes,
+    selectedVehicle?.type || "MATATU"
+  )
+
   // Transform data for the Leaflet map component
   const mapVehicles: MapVehicle[] = useMemo(() => {
     return activeVehicles.map((v) => ({
@@ -83,11 +122,14 @@ export function LiveMapView() {
       id: r.id,
       name: r.name,
       color: r.color,
+      isActive: r.id === selectedRouteId,
       stages: r.stages.map((s) => ({
+        id: s.id,
         name: s.name,
         lat: s.latitude,
         lng: s.longitude,
         isTerminal: s.isTerminal,
+        order: s.order,
       })),
     }))
   }, [routes, selectedRouteId])
@@ -108,6 +150,12 @@ export function LiveMapView() {
     setMobileSheetExpanded(false)
   }
 
+  // Get selected route for stage timeline
+  const selectedRoute = useMemo(() => {
+    if (!vehicleProgress) return null
+    return routes.find(r => r.id === vehicleProgress.routeId)
+  }, [vehicleProgress, routes])
+
   return (
     <div className="relative flex h-[calc(100vh-4rem)] w-full overflow-hidden">
       {/* ─── Desktop Sidebar ───────────────────────────────────── */}
@@ -118,65 +166,58 @@ export function LiveMapView() {
               Routes & Vehicles
             </h2>
           </div>
-
           <ScrollArea className="flex-1">
-            <div className="p-3">
-              {/* Route Selector */}
-              <div className="mb-3">
-                <p className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                  Filter by Route
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setSelectedRouteId(null)}
-                  className={cn(
-                    "mb-1 flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm transition-colors",
-                    !selectedRouteId
-                      ? "bg-primary/10 text-primary"
-                      : "text-muted-foreground hover:bg-muted"
-                  )}
-                >
-                  <Layers className="h-4 w-4" />
-                  All Routes
-                  <span className="ml-auto rounded-full bg-muted px-2 py-0.5 text-xs font-medium">
-                    {allPositions.length}
-                  </span>
-                </button>
-                {routes.map((route) => {
-                  const count = allPositions.filter((p) =>
-                    p.routes.some((r) => r.id === route.id)
-                  ).length
-                  return (
-                    <button
-                      type="button"
-                      key={route.id}
-                      onClick={() => setSelectedRouteId(route.id)}
-                      className={cn(
-                        "mb-1 flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm transition-colors",
-                        selectedRouteId === route.id
-                          ? "bg-primary/10 text-primary"
-                          : "text-muted-foreground hover:bg-muted"
-                      )}
-                    >
-                      <div
-                        className="h-3 w-3 rounded-full"
-                        style={{ backgroundColor: route.color }}
-                      />
-                      <span className="flex-1 truncate">{route.name}</span>
-                      <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium">
-                        {count}
-                      </span>
-                    </button>
-                  )
-                })}
-              </div>
+            <div className="p-4">
+              {/* Route Filter */}
+              <p className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                Filter by Route
+              </p>
+              <button
+                type="button"
+                onClick={() => setSelectedRouteId(null)}
+                className={cn(
+                  "mb-1 flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm transition-colors",
+                  !selectedRouteId
+                    ? "bg-primary/10 text-primary"
+                    : "text-muted-foreground hover:bg-muted"
+                )}
+              >
+                <Layers className="h-4 w-4" />
+                All Routes
+                <span className="ml-auto text-xs">{allPositions.length}</span>
+              </button>
+              {routes.map((route) => {
+                const count = allPositions.filter((p) =>
+                  p.routes.some((r) => r.id === route.id)
+                ).length
+                return (
+                  <button
+                    type="button"
+                    key={route.id}
+                    onClick={() => setSelectedRouteId(route.id)}
+                    className={cn(
+                      "mb-1 flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm transition-colors",
+                      selectedRouteId === route.id
+                        ? "bg-primary/10 text-primary"
+                        : "text-muted-foreground hover:bg-muted"
+                    )}
+                  >
+                    <div
+                      className="h-3 w-3 rounded-full"
+                      style={{ backgroundColor: route.color }}
+                    />
+                    <span className="flex-1 truncate">{route.name}</span>
+                    <span className="text-xs">{count}</span>
+                  </button>
+                )
+              })}
 
-              {/* Active Vehicles List */}
-              <div>
+              {/* Active Vehicles */}
+              <div className="mt-6">
                 <p className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
                   Active Vehicles ({activeVehicles.length})
                 </p>
-                <div className="flex flex-col gap-1.5">
+                <div className="space-y-1">
                   {activeVehicles.map((vehicle) => (
                     <button
                       type="button"
@@ -186,24 +227,27 @@ export function LiveMapView() {
                         setMobileSheetExpanded(true)
                       }}
                       className={cn(
-                        "flex items-center gap-3 rounded-xl px-3 py-3 text-left transition-colors",
+                        "flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors",
                         selectedVehicle?.vehicleId === vehicle.vehicleId
-                          ? "bg-primary/10 ring-1 ring-primary/20"
+                          ? "bg-primary/10"
                           : "hover:bg-muted"
                       )}
                     >
-                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-muted">
-                        <Bus className="h-5 w-5 text-muted-foreground" />
+                      <div
+                        className="flex h-9 w-9 items-center justify-center rounded-full"
+                        style={{ backgroundColor: vehicle.routes[0]?.color || "#10B981" }}
+                      >
+                        <Bus className="h-4 w-4 text-white" />
                       </div>
                       <div className="flex-1 overflow-hidden">
-                        <p className="truncate text-sm font-semibold text-foreground">
+                        <p className="text-sm font-medium text-foreground">
                           {vehicle.plateNumber}
                         </p>
                         <p className="truncate text-xs text-muted-foreground">
                           {vehicle.routes.map((r) => r.name).join(", ")}
                         </p>
                       </div>
-                      <div className="flex flex-col items-end gap-1">
+                      <div className="flex flex-col items-end gap-0.5">
                         <span className="flex items-center gap-1 text-xs font-medium text-foreground">
                           <Navigation className="h-3 w-3 text-primary" />
                           {Math.round(vehicle.position.speed)}
@@ -274,16 +318,23 @@ export function LiveMapView() {
             vehicles={mapVehicles}
             routes={mapRoutes}
             selectedVehicleId={selectedVehicle?.vehicleId}
+            selectedRouteId={selectedRouteId}
             onVehicleClick={handleVehicleClick}
             showRouteLines={true}
             enableAnimation={true}
+            highlightActiveRoute={true}
           />
         </Suspense>
 
         {/* ─── Desktop Vehicle Panel ───────────────────────────── */}
         {selectedVehicle && (
-          <div className="absolute bottom-4 right-4 z-20 hidden w-80 rounded-2xl border border-border bg-card p-4 shadow-xl md:block">
-            <VehicleDetails vehicle={selectedVehicle} onClose={closeVehiclePanel} />
+          <div className="absolute bottom-4 right-4 z-20 hidden w-96 rounded-2xl border border-border bg-card p-4 shadow-xl md:block">
+            <VehicleDetails
+              vehicle={selectedVehicle}
+              progress={vehicleProgress}
+              route={selectedRoute}
+              onClose={closeVehiclePanel}
+            />
           </div>
         )}
 
@@ -310,16 +361,27 @@ export function LiveMapView() {
           {/* Collapsed Preview */}
           {selectedVehicle && !mobileSheetExpanded && (
             <div className="flex items-center gap-3 px-4 pb-4">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
-                <Bus className="h-6 w-6 text-primary" />
+              <div
+                className="flex h-12 w-12 items-center justify-center rounded-xl"
+                style={{ backgroundColor: selectedVehicle.routes[0]?.color || "#10B981" }}
+              >
+                <Bus className="h-6 w-6 text-white" />
               </div>
               <div className="flex-1">
                 <p className="font-semibold text-foreground">
                   {selectedVehicle.plateNumber}
                 </p>
-                <p className="text-sm text-muted-foreground">
-                  {Math.round(selectedVehicle.position.speed)} km/h
-                </p>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-muted-foreground">
+                    {Math.round(selectedVehicle.position.speed)} km/h
+                  </span>
+                  {vehicleProgress && (
+                    <Badge variant="secondary" className="text-[10px]">
+                      <Timer className="mr-1 h-3 w-3" />
+                      {vehicleProgress.formattedETA}
+                    </Badge>
+                  )}
+                </div>
               </div>
               <Button variant="ghost" size="icon" onClick={closeVehiclePanel}>
                 <X className="h-5 w-5" />
@@ -329,8 +391,13 @@ export function LiveMapView() {
 
           {/* Expanded Content */}
           {selectedVehicle && mobileSheetExpanded && (
-            <div className="px-4 pb-6">
-              <VehicleDetails vehicle={selectedVehicle} onClose={closeVehiclePanel} />
+            <div className="max-h-[70vh] overflow-y-auto px-4 pb-6">
+              <VehicleDetails
+                vehicle={selectedVehicle}
+                progress={vehicleProgress}
+                route={selectedRoute}
+                onClose={closeVehiclePanel}
+              />
             </div>
           )}
         </div>
@@ -418,20 +485,25 @@ export function LiveMapView() {
   )
 }
 
-// ─── Vehicle Details Component ────────────────────────────────
-function VehicleDetails({
-  vehicle,
-  onClose,
-}: {
+// ─── Vehicle Details Component with Progress Tracking ─────────
+interface VehicleDetailsProps {
   vehicle: LivePosition
+  progress: ReturnType<typeof useVehicleProgress>
+  route: RouteData | null | undefined
   onClose: () => void
-}) {
+}
+
+function VehicleDetails({ vehicle, progress, route, onClose }: VehicleDetailsProps) {
   return (
     <>
+      {/* Header */}
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
-            <Bus className="h-6 w-6 text-primary" />
+          <div
+            className="flex h-12 w-12 items-center justify-center rounded-xl"
+            style={{ backgroundColor: vehicle.routes[0]?.color || "#10B981" }}
+          >
+            <Bus className="h-6 w-6 text-white" />
           </div>
           <div>
             <p className="font-display text-base font-semibold text-foreground">
@@ -449,6 +521,7 @@ function VehicleDetails({
         </Button>
       </div>
 
+      {/* Badges */}
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <Badge variant="secondary" className="text-xs">
           {VEHICLE_TYPE_LABELS[vehicle.type as keyof typeof VEHICLE_TYPE_LABELS] || vehicle.type}
@@ -458,7 +531,69 @@ function VehicleDetails({
             Premium
           </Badge>
         )}
+        {progress?.isOnRoute && (
+          <Badge variant="outline" className="gap-1 text-xs text-primary border-primary/30">
+            <Target className="h-3 w-3" />
+            On Route
+          </Badge>
+        )}
       </div>
+
+      {/* Progress Section */}
+      {progress && (
+        <div className="mt-4 space-y-3">
+          {/* Route Progress Bar */}
+          <div className="rounded-xl border border-border bg-muted/30 p-3">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-xs font-medium text-muted-foreground">
+                Route Progress
+              </span>
+              <span className="text-sm font-bold" style={{ color: progress.routeColor }}>
+                {Math.round(progress.progress)}%
+              </span>
+            </div>
+            <Progress value={progress.progress} className="h-2" />
+            <div className="mt-2 flex items-center justify-between text-[10px] text-muted-foreground">
+              <span>{progress.routeName.split('-')[0]?.trim()}</span>
+              <span>{progress.routeName.split('-')[1]?.trim()}</span>
+            </div>
+          </div>
+
+          {/* Next Stage & ETA */}
+          <div className="grid grid-cols-2 gap-2">
+            {progress.nextStage && (
+              <div className="flex flex-col gap-1 rounded-xl border border-border bg-muted/30 p-3">
+                <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                  Next Stop
+                </span>
+                <div className="flex items-center gap-2">
+                  <ArrowRight className="h-4 w-4 text-primary" />
+                  <span className="text-sm font-medium text-foreground truncate">
+                    {progress.nextStage.name}
+                  </span>
+                </div>
+                <span className="text-xs text-muted-foreground">
+                  {progress.distanceToNextStage.toFixed(1)} km away
+                </span>
+              </div>
+            )}
+            <div className="flex flex-col gap-1 rounded-xl border border-border bg-muted/30 p-3">
+              <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                ETA to Terminus
+              </span>
+              <div className="flex items-center gap-2">
+                <Timer className="h-4 w-4 text-accent" />
+                <span className="text-lg font-bold text-foreground">
+                  {progress.formattedETA}
+                </span>
+              </div>
+              <span className="text-xs text-muted-foreground">
+                {progress.formattedDistance} remaining
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Stats Grid */}
       <div className="mt-4 grid grid-cols-3 gap-2">
@@ -488,11 +623,85 @@ function VehicleDetails({
         </div>
       </div>
 
+      {/* Stage Timeline (when we have progress and route data) */}
+      {progress && route && route.stages.length > 0 && (
+        <div className="mt-4">
+          <p className="mb-2 flex items-center gap-1 text-xs text-muted-foreground">
+            <Route className="h-3 w-3" />
+            Stage Timeline ({progress.stagesRemaining} remaining)
+          </p>
+          <div className="max-h-32 overflow-y-auto rounded-xl border border-border bg-muted/20 p-2">
+            <div className="space-y-0">
+              {route.stages.slice(0, 8).map((stage, index) => {
+                const isPassed = index <= progress.currentStageIndex
+                const isCurrent = index === progress.currentStageIndex
+                const isNext = index === progress.currentStageIndex + 1
+
+                return (
+                  <div
+                    key={stage.id}
+                    className={cn(
+                      "flex items-center gap-2 rounded-lg px-2 py-1.5 transition-colors",
+                      isCurrent && "bg-primary/10",
+                      isNext && "bg-accent/10"
+                    )}
+                  >
+                    <div className="relative">
+                      {isPassed ? (
+                        <CheckCircle2
+                          className="h-4 w-4"
+                          style={{ color: progress.routeColor }}
+                        />
+                      ) : isNext ? (
+                        <Target className="h-4 w-4 text-accent animate-pulse" />
+                      ) : (
+                        <CircleDot className="h-4 w-4 text-muted-foreground/50" />
+                      )}
+                      {/* Connecting line */}
+                      {index < route.stages.length - 1 && index < 7 && (
+                        <div
+                          className={cn(
+                            "absolute left-1/2 top-full h-3 w-0.5 -translate-x-1/2",
+                            isPassed ? "bg-primary/50" : "bg-muted-foreground/20"
+                          )}
+                        />
+                      )}
+                    </div>
+                    <span
+                      className={cn(
+                        "flex-1 truncate text-xs",
+                        isPassed ? "text-foreground font-medium" : "text-muted-foreground",
+                        isCurrent && "text-primary font-semibold",
+                        isNext && "text-accent font-medium"
+                      )}
+                    >
+                      {stage.name}
+                      {isCurrent && " (current)"}
+                      {isNext && " (next)"}
+                    </span>
+                    {stage.isTerminal && (
+                      <Badge variant="secondary" className="text-[8px] px-1 py-0">
+                        Terminal
+                      </Badge>
+                    )}
+                  </div>
+                )
+              })}
+              {route.stages.length > 8 && (
+                <p className="text-center text-[10px] text-muted-foreground py-1">
+                  +{route.stages.length - 8} more stages
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Routes */}
       <div className="mt-4">
         <p className="mb-2 flex items-center gap-1 text-xs text-muted-foreground">
           <Route className="h-3 w-3" />
-          Routes
+          Assigned Routes
         </p>
         <div className="flex flex-wrap gap-1.5">
           {vehicle.routes.map((route) => (
