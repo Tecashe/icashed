@@ -505,9 +505,41 @@ export function LeafletMap({
           animation: vehicle-pulse 2s ease-in-out infinite;
         }
         
+        /* Live position indicator - prominent blinking dot */
+        .vehicle-pulse::before {
+          content: '';
+          position: absolute;
+          width: 60px;
+          height: 60px;
+          border-radius: 50%;
+          background: radial-gradient(circle, rgba(16, 185, 129, 0.4) 0%, rgba(16, 185, 129, 0) 70%);
+          animation: gps-ping 1.5s ease-out infinite;
+        }
+        
+        .vehicle-pulse::after {
+          content: '';
+          position: absolute;
+          width: 80px;
+          height: 80px;
+          border-radius: 50%;
+          border: 2px solid rgba(16, 185, 129, 0.5);
+          animation: gps-ring 2s ease-out infinite;
+        }
+        
+        @keyframes gps-ping {
+          0% { transform: scale(0.5); opacity: 1; }
+          100% { transform: scale(1.5); opacity: 0; }
+        }
+        
+        @keyframes gps-ring {
+          0% { transform: scale(0.7); opacity: 0.8; }
+          50% { transform: scale(1.2); opacity: 0.3; }
+          100% { transform: scale(1.5); opacity: 0; }
+        }
+        
         @keyframes vehicle-pulse {
           0%, 100% { box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4), 0 0 20px rgba(16, 185, 129, 0.3); }
-          50% { box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5), 0 0 30px rgba(16, 185, 129, 0.5); }
+          50% { box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5), 0 0 40px rgba(16, 185, 129, 0.6); }
         }
         
         .vehicle-selected-ring {

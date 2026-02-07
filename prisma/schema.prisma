@@ -257,10 +257,12 @@ model Review {
   vehicleId String   @map("vehicle_id")
   rating    Int      // 1-5 stars
   comment   String?
+  tags      String[] @default([]) // ["rude_tout", "bad_condition", "speeding", etc.]
   createdAt DateTime @default(now()) @map("created_at")
 
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
 
+  @@index([vehicleId])
   @@map("reviews")
 }

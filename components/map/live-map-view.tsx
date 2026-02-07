@@ -18,6 +18,9 @@ import {
   Timer,
   CircleDot,
   CheckCircle2,
+  Star,
+  MessageSquare,
+  Camera,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -26,9 +29,13 @@ import { Progress } from "@/components/ui/progress"
 import { useRealtimePositions } from "@/hooks/use-realtime-positions"
 import { useRoutes, type LivePosition, type RouteData } from "@/hooks/use-data"
 import { useVehicleProgress, type RouteWithStages } from "@/hooks/use-vehicle-progress"
+import { ReviewForm } from "@/components/reviews/review-form"
+import { VehicleImageGallery } from "@/components/vehicles/vehicle-gallery"
 import { VEHICLE_TYPE_LABELS } from "@/lib/constants"
 import { cn } from "@/lib/utils"
 import type { MapVehicle, MapRoute } from "@/components/map/leaflet-map"
+import useSWR from "swr"
+import { fetcher } from "@/lib/api-client"
 
 // Dynamic import for Leaflet (SSR-incompatible)
 const LeafletMap = dynamic(
@@ -494,8 +501,25 @@ interface VehicleDetailsProps {
 }
 
 function VehicleDetails({ vehicle, progress, route, onClose }: VehicleDetailsProps) {
+  const [showReviewForm, setShowReviewForm] = useState(false)
+
+  // Fetch vehicle rating
+  const { data: reviewsData } = useSWR(
+    `/api/reviews?vehicleId=${vehicle.vehicleId}&limit=5`,
+    fetcher
+  )
+  const recentReviews = reviewsData?.reviews || []
+  const avgRating = recentReviews.length > 0
+    ? recentReviews.reduce((sum: number, r: { rating: number }) => sum + r.rating, 0) / recentReviews.length
+    : null
+
   return (
     <>
+      {/* Vehicle Images */}
+      <div className="mb-4">
+        <VehicleImageGallery vehicleId={vehicle.vehicleId} />
+      </div>
+
       {/* Header */}
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-3">
@@ -509,11 +533,19 @@ function VehicleDetails({ vehicle, progress, route, onClose }: VehicleDetailsPro
             <p className="font-display text-base font-semibold text-foreground">
               {vehicle.plateNumber}
             </p>
-            {vehicle.nickname && (
-              <p className="text-sm text-muted-foreground">
-                {vehicle.nickname}
-              </p>
-            )}
+            <div className="flex items-center gap-2">
+              {vehicle.nickname && (
+                <p className="text-sm text-muted-foreground">
+                  {vehicle.nickname}
+                </p>
+              )}
+              {avgRating && (
+                <div className="flex items-center gap-1 text-amber-500">
+                  <Star className="h-3.5 w-3.5 fill-current" />
+                  <span className="text-xs font-medium">{avgRating.toFixed(1)}</span>
+                </div>
+              )}
+            </div>
           </div>
         </div>
         <Button variant="ghost" size="icon" className="h-9 w-9" onClick={onClose}>
@@ -715,6 +747,26 @@ function VehicleDetails({ vehicle, progress, route, onClose }: VehicleDetailsPro
           ))}
         </div>
       </div>
+
+      {/* Rate This Vehicle Button */}
+      <div className="mt-4">
+        <Button
+          variant="outline"
+          className="w-full gap-2"
+          onClick={() => setShowReviewForm(true)}
+        >
+          <MessageSquare className="h-4 w-4" />
+          Rate This Vehicle
+        </Button>
+      </div>
+
+      {/* Review Form Sheet */}
+      <ReviewForm
+        vehicleId={vehicle.vehicleId}
+        plateNumber={vehicle.plateNumber}
+        isOpen={showReviewForm}
+        onClose={() => setShowReviewForm(false)}
+      />
     </>
   )
 }

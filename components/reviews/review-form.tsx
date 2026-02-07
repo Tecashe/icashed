@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import {
@@ -13,6 +14,7 @@ import {
 } from "@/components/ui/sheet"
 import { StarRating } from "./star-rating"
 import { Loader2, Send } from "lucide-react"
+import { cn } from "@/lib/utils"
 
 interface ReviewFormProps {
     vehicleId: string
@@ -20,6 +22,60 @@ interface ReviewFormProps {
     isOpen: boolean
     onClose: () => void
     onSuccess?: () => void
+}
+
+// Review tag categories with emojis
+const TAG_CATEGORIES = {
+    vehicle: {
+        label: "Vehicle",
+        emoji: "🚗",
+        tags: [
+            { id: "clean", label: "Clean", positive: true },
+            { id: "dirty", label: "Dirty", positive: false },
+            { id: "damaged", label: "Damaged", positive: false },
+            { id: "comfortable", label: "Comfortable", positive: true },
+            { id: "cramped", label: "Cramped", positive: false },
+        ],
+    },
+    tout: {
+        label: "Conductor",
+        emoji: "👤",
+        tags: [
+            { id: "polite_tout", label: "Polite", positive: true },
+            { id: "rude_tout", label: "Rude", positive: false },
+            { id: "helpful_tout", label: "Helpful", positive: true },
+            { id: "aggressive_tout", label: "Aggressive", positive: false },
+        ],
+    },
+    driver: {
+        label: "Driver",
+        emoji: "🚦",
+        tags: [
+            { id: "safe_driver", label: "Safe", positive: true },
+            { id: "speeding", label: "Speeding", positive: false },
+            { id: "reckless", label: "Reckless", positive: false },
+            { id: "professional", label: "Professional", positive: true },
+        ],
+    },
+    service: {
+        label: "Service",
+        emoji: "⏱️",
+        tags: [
+            { id: "on_time", label: "On Time", positive: true },
+            { id: "delayed", label: "Delayed", positive: false },
+            { id: "fast_service", label: "Fast", positive: true },
+            { id: "overcrowded", label: "Overcrowded", positive: false },
+        ],
+    },
+    extras: {
+        label: "Extras",
+        emoji: "🎵",
+        tags: [
+            { id: "good_music", label: "Good Music", positive: true },
+            { id: "too_loud", label: "Too Loud", positive: false },
+            { id: "recommended", label: "Would Recommend", positive: true },
+        ],
+    },
 }
 
 export function ReviewForm({
@@ -30,9 +86,16 @@ export function ReviewForm({
     onSuccess,
 }: ReviewFormProps) {
     const [rating, setRating] = useState(0)
+    const [selectedTags, setSelectedTags] = useState<string[]>([])
     const [comment, setComment] = useState("")
     const [isSubmitting, setIsSubmitting] = useState(false)
     const [error, setError] = useState<string | null>(null)
+
+    const toggleTag = (tagId: string) => {
+        setSelectedTags((prev) =>
+            prev.includes(tagId) ? prev.filter((t) => t !== tagId) : [...prev, tagId]
+        )
+    }
 
     const handleSubmit = async () => {
         if (rating === 0) {
@@ -50,6 +113,7 @@ export function ReviewForm({
                 body: JSON.stringify({
                     vehicleId,
                     rating,
+                    tags: selectedTags,
                     comment: comment.trim() || undefined,
                 }),
             })
@@ -60,8 +124,12 @@ export function ReviewForm({
 
             // Reset form
             setRating(0)
+            setSelectedTags([])
             setComment("")
 
+            toast.success("Review submitted!", {
+                description: "Thank you for your feedback",
+            })
             onSuccess?.()
             onClose()
         } catch {
@@ -74,6 +142,7 @@ export function ReviewForm({
     const handleClose = () => {
         if (!isSubmitting) {
             setRating(0)
+            setSelectedTags([])
             setComment("")
             setError(null)
             onClose()
@@ -82,7 +151,7 @@ export function ReviewForm({
 
     return (
         <Sheet open={isOpen} onOpenChange={handleClose}>
-            <SheetContent side="bottom" className="rounded-t-3xl">
+            <SheetContent side="bottom" className="max-h-[90vh] overflow-y-auto rounded-t-3xl">
                 <SheetHeader className="text-left">
                     <SheetTitle>Rate Your Trip</SheetTitle>
                     <SheetDescription>
@@ -90,9 +159,9 @@ export function ReviewForm({
                     </SheetDescription>
                 </SheetHeader>
 
-                <div className="py-6 space-y-6">
+                <div className="py-5 space-y-5">
                     {/* Star Rating */}
-                    <div className="flex flex-col items-center gap-3">
+                    <div className="flex flex-col items-center gap-3 rounded-2xl bg-muted/50 p-4">
                         <p className="text-sm text-muted-foreground">Tap to rate</p>
                         <StarRating
                             rating={rating}
@@ -108,6 +177,40 @@ export function ReviewForm({
                                 {rating === 1 && "Poor 👎"}
                             </p>
                         )}
+                    </div>
+
+                    {/* Quick Tags */}
+                    <div className="space-y-4">
+                        <p className="text-sm font-medium text-muted-foreground">
+                            Quick feedback (optional)
+                        </p>
+                        {Object.entries(TAG_CATEGORIES).map(([key, category]) => (
+                            <div key={key} className="space-y-2">
+                                <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                                    <span>{category.emoji}</span>
+                                    {category.label}
+                                </p>
+                                <div className="flex flex-wrap gap-1.5">
+                                    {category.tags.map((tag) => (
+                                        <button
+                                            key={tag.id}
+                                            type="button"
+                                            onClick={() => toggleTag(tag.id)}
+                                            className={cn(
+                                                "rounded-full border px-3 py-1.5 text-xs font-medium transition-all",
+                                                selectedTags.includes(tag.id)
+                                                    ? tag.positive
+                                                        ? "border-primary bg-primary/10 text-primary"
+                                                        : "border-destructive bg-destructive/10 text-destructive"
+                                                    : "border-border bg-muted/50 text-muted-foreground hover:bg-muted"
+                                            )}
+                                        >
+                                            {tag.label}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        ))}
                     </div>
 
                     {/* Comment */}

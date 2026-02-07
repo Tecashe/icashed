@@ -11,7 +11,7 @@ export async function POST(request: NextRequest) {
         }
 
         const body = await request.json()
-        const { vehicleId, rating, comment } = body
+        const { vehicleId, rating, comment, tags } = body
 
         if (!vehicleId || !rating || rating < 1 || rating > 5) {
             return NextResponse.json(
@@ -19,6 +19,18 @@ export async function POST(request: NextRequest) {
                 { status: 400 }
             )
         }
+
+        // Validate tags if provided
+        const validTags = [
+            "clean", "dirty", "damaged", "comfortable", "cramped",
+            "polite_tout", "rude_tout", "helpful_tout", "aggressive_tout",
+            "safe_driver", "speeding", "reckless", "professional",
+            "on_time", "delayed", "fast_service", "slow",
+            "good_music", "too_loud", "overcrowded", "recommended"
+        ]
+        const sanitizedTags = Array.isArray(tags)
+            ? tags.filter((t: string) => validTags.includes(t))
+            : []
 
         // Check vehicle exists
         const vehicle = await prisma.vehicle.findUnique({
@@ -39,6 +51,7 @@ export async function POST(request: NextRequest) {
                 vehicleId,
                 rating,
                 comment: comment?.trim() || null,
+                tags: sanitizedTags,
             },
             include: {
                 user: {
