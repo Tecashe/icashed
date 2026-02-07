@@ -26,7 +26,7 @@ export async function GET() {
         ? vehicles.reduce((sum: number, v: any) => sum + v.rating, 0) / vehicles.length
         : 0
 
-    // Position updates in last24h
+    // Position updates in last24
     const yesterday = new Date()
     yesterday.setDate(yesterday.getDate() - 1)
     const recentPositions = await prisma.vehiclePosition.count({
