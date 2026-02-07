@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { getCurrentUser } from "@/lib/auth"
 import { positionUpdateSchema } from "@/lib/validations"
+import { pusherServer, CHANNELS, EVENTS, type PositionUpdatePayload } from "@/lib/pusher"
 
 // POST /api/driver/position - Update vehicle position (authenticated driver)
 export async function POST(request: NextRequest) {
@@ -23,9 +24,14 @@ export async function POST(request: NextRequest) {
 
     const { vehicleId, latitude, longitude, speed, heading } = parsed.data
 
-    // Verify the vehicle belongs to this driver
+    // Verify the vehicle belongs to this driver and get route info
     const vehicle = await prisma.vehicle.findFirst({
       where: { id: vehicleId, ownerId: user.id },
+      include: {
+        routes: {
+          include: { route: { select: { id: true, name: true, color: true } } },
+        },
+      },
     })
 
     if (!vehicle) {
@@ -37,6 +43,25 @@ export async function POST(request: NextRequest) {
 
     const position = await prisma.vehiclePosition.create({
       data: { vehicleId, latitude, longitude, speed, heading },
+    })
+
+    // Broadcast position update via Pusher for real-time tracking
+    const payload: PositionUpdatePayload = {
+      vehicleId: vehicle.id,
+      plateNumber: vehicle.plateNumber,
+      nickname: vehicle.nickname,
+      type: vehicle.type,
+      latitude,
+      longitude,
+      speed,
+      heading,
+      timestamp: position.timestamp.toISOString(),
+      routes: vehicle.routes.map((vr: { route: { id: string; name: string; color: string } }) => vr.route),
+    }
+
+    // Fire and forget - don't wait for Pusher response
+    pusherServer.trigger(CHANNELS.VEHICLES_LIVE, EVENTS.POSITION_UPDATE, payload).catch((err) => {
+      console.error("Pusher broadcast error:", err)
     })
 
     return NextResponse.json({ position }, { status: 201 })

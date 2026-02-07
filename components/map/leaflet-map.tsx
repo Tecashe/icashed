@@ -4,24 +4,17 @@ import { useEffect, useRef, useState } from "react"
 import L from "leaflet"
 import "leaflet/dist/leaflet.css"
 
-// Fix default marker icon issue with webpack/next
-const defaultIcon = L.icon({
-  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
-  iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
-  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-  popupAnchor: [1, -34],
-  shadowSize: [41, 41],
-})
-
-function createVehicleIcon(color: string, isSelected: boolean) {
-  const size = isSelected ? 36 : 28
+// ─── Custom Vehicle Icon with Animation Support ───────────────
+function createVehicleIcon(color: string, isSelected: boolean, isLive: boolean) {
+  const size = isSelected ? 40 : 32
+  const pulseClass = isLive ? "vehicle-pulse" : ""
   const svg = `
-    <svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="${color}" stroke="white" strokeWidth="1.5">
-      <circle cx="12" cy="12" r="10" fill="${color}" stroke="white" strokeWidth="2"/>
-      <path d="M12 2L15 9H9L12 2Z" fill="white" stroke="none" transform="rotate(0 12 12)"/>
-    </svg>
+    <div class="vehicle-icon-wrapper ${pulseClass}">
+      <svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="${color}" stroke="white" strokeWidth="1.5">
+        <circle cx="12" cy="12" r="10" fill="${color}" stroke="white" strokeWidth="2"/>
+        <path d="M12 6L15 11H9L12 6Z" fill="white" stroke="none"/>
+      </svg>
+    </div>
   `
   return L.divIcon({
     html: svg,
@@ -32,16 +25,17 @@ function createVehicleIcon(color: string, isSelected: boolean) {
 }
 
 function createStageIcon(isTerminal: boolean) {
-  const size = isTerminal ? 16 : 10
+  const size = isTerminal ? 18 : 12
   const color = isTerminal ? "hsl(160, 84%, 39%)" : "hsl(220, 10%, 46%)"
   return L.divIcon({
-    html: `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${color};border:2px solid white;box-shadow:0 1px 4px rgba(0,0,0,0.3);"></div>`,
+    html: `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${color};border:2px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.3);"></div>`,
     className: "stage-marker",
     iconSize: [size, size],
     iconAnchor: [size / 2, size / 2],
   })
 }
 
+// ─── Types ────────────────────────────────────────────────────
 export interface MapVehicle {
   id: string
   plateNumber: string
@@ -53,6 +47,7 @@ export interface MapVehicle {
   heading: number
   color: string
   routeName: string
+  isLive?: boolean
 }
 
 export interface MapStage {
@@ -78,8 +73,40 @@ interface LeafletMapProps {
   zoom?: number
   className?: string
   showRouteLines?: boolean
+  enableAnimation?: boolean
 }
 
+// ─── Smooth Position Interpolation ────────────────────────────
+function animateMarker(
+  marker: L.Marker,
+  targetLat: number,
+  targetLng: number,
+  duration: number = 500
+) {
+  const start = marker.getLatLng()
+  const startTime = performance.now()
+
+  function animate(currentTime: number) {
+    const elapsed = currentTime - startTime
+    const progress = Math.min(elapsed / duration, 1)
+
+    // Ease out cubic for smooth deceleration
+    const eased = 1 - Math.pow(1 - progress, 3)
+
+    const lat = start.lat + (targetLat - start.lat) * eased
+    const lng = start.lng + (targetLng - start.lng) * eased
+
+    marker.setLatLng([lat, lng])
+
+    if (progress < 1) {
+      requestAnimationFrame(animate)
+    }
+  }
+
+  requestAnimationFrame(animate)
+}
+
+// ─── Main Component ───────────────────────────────────────────
 export function LeafletMap({
   vehicles,
   routes = [],
@@ -89,10 +116,12 @@ export function LeafletMap({
   zoom = 12,
   className = "",
   showRouteLines = true,
+  enableAnimation = true,
 }: LeafletMapProps) {
   const mapRef = useRef<L.Map | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const vehicleMarkersRef = useRef<Map<string, L.Marker>>(new Map())
+  const vehiclePositionsRef = useRef<Map<string, { lat: number; lng: number }>>(new Map())
   const routeLayersRef = useRef<L.LayerGroup | null>(null)
   const [mounted, setMounted] = useState(false)
 
@@ -107,7 +136,7 @@ export function LeafletMap({
       attributionControl: false,
     })
 
-    // Use CartoDB dark theme tile layer -- free, no API key
+    // CartoDB dark theme tile layer
     L.tileLayer(
       "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
       {
@@ -146,8 +175,8 @@ export function LeafletMap({
       // Route polyline
       L.polyline(latlngs, {
         color: route.color,
-        weight: 3,
-        opacity: 0.6,
+        weight: 4,
+        opacity: 0.7,
         dashArray: "8 4",
       }).addTo(routeLayersRef.current!)
 
@@ -158,7 +187,7 @@ export function LeafletMap({
         })
           .bindTooltip(stage.name, {
             direction: "top",
-            offset: [0, -8],
+            offset: [0, -10],
             className: "stage-tooltip",
           })
           .addTo(routeLayersRef.current!)
@@ -166,7 +195,7 @@ export function LeafletMap({
     })
   }, [routes, showRouteLines])
 
-  // Update vehicle markers
+  // Update vehicle markers with smooth animation
   useEffect(() => {
     if (!mapRef.current || !mounted) return
 
@@ -177,23 +206,36 @@ export function LeafletMap({
       if (!currentIds.has(id)) {
         marker.remove()
         vehicleMarkersRef.current.delete(id)
+        vehiclePositionsRef.current.delete(id)
       }
     })
 
     // Update or add vehicle markers
     vehicles.forEach((vehicle) => {
       const isSelected = selectedVehicleId === vehicle.id
-      const icon = createVehicleIcon(vehicle.color || "#10B981", isSelected)
+      const isLive = vehicle.isLive ?? true
+      const icon = createVehicleIcon(vehicle.color || "#10B981", isSelected, isLive)
       const existingMarker = vehicleMarkersRef.current.get(vehicle.id)
+      const prevPos = vehiclePositionsRef.current.get(vehicle.id)
 
       if (existingMarker) {
-        existingMarker.setLatLng([vehicle.lat, vehicle.lng])
+        // Animate to new position if enabled and position changed
+        if (enableAnimation && prevPos &&
+          (prevPos.lat !== vehicle.lat || prevPos.lng !== vehicle.lng)) {
+          animateMarker(existingMarker, vehicle.lat, vehicle.lng, 800)
+        } else {
+          existingMarker.setLatLng([vehicle.lat, vehicle.lng])
+        }
         existingMarker.setIcon(icon)
       } else {
         const marker = L.marker([vehicle.lat, vehicle.lng], { icon })
           .bindTooltip(
-            `<strong>${vehicle.plateNumber}</strong><br/>${vehicle.routeName}<br/>${Math.round(vehicle.speed)} km/h`,
-            { direction: "top", offset: [0, -16] }
+            `<div class="vehicle-tooltip">
+              <strong>${vehicle.plateNumber}</strong>
+              <span class="route-name">${vehicle.routeName}</span>
+              <span class="speed">${Math.round(vehicle.speed)} km/h</span>
+            </div>`,
+            { direction: "top", offset: [0, -20], className: "vehicle-tip" }
           )
           .addTo(mapRef.current!)
 
@@ -203,15 +245,18 @@ export function LeafletMap({
 
         vehicleMarkersRef.current.set(vehicle.id, marker)
       }
+
+      // Store current position for next animation
+      vehiclePositionsRef.current.set(vehicle.id, { lat: vehicle.lat, lng: vehicle.lng })
     })
-  }, [vehicles, selectedVehicleId, onVehicleClick, mounted])
+  }, [vehicles, selectedVehicleId, onVehicleClick, mounted, enableAnimation])
 
   // Pan to selected vehicle
   useEffect(() => {
     if (!mapRef.current || !selectedVehicleId) return
     const vehicle = vehicles.find((v) => v.id === selectedVehicleId)
     if (vehicle) {
-      mapRef.current.panTo([vehicle.lat, vehicle.lng], { animate: true })
+      mapRef.current.panTo([vehicle.lat, vehicle.lng], { animate: true, duration: 0.5 })
     }
   }, [selectedVehicleId, vehicles])
 
@@ -222,21 +267,49 @@ export function LeafletMap({
           background: none !important;
           border: none !important;
         }
+        .vehicle-icon-wrapper {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .vehicle-pulse svg circle {
+          animation: pulse-ring 2s ease-out infinite;
+        }
+        @keyframes pulse-ring {
+          0% { stroke-width: 2; stroke-opacity: 1; }
+          50% { stroke-width: 6; stroke-opacity: 0.5; }
+          100% { stroke-width: 2; stroke-opacity: 1; }
+        }
         .stage-marker {
           background: none !important;
           border: none !important;
         }
-        .stage-tooltip {
-          font-size: 11px;
+        .stage-tooltip,
+        .vehicle-tip {
+          font-size: 12px;
           font-weight: 500;
           background: hsl(220, 18%, 10%);
           color: hsl(0, 0%, 96%);
           border: 1px solid hsl(220, 14%, 18%);
-          border-radius: 6px;
-          padding: 4px 8px;
-          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+          border-radius: 8px;
+          padding: 8px 12px;
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
         }
-        .stage-tooltip::before {
+        .vehicle-tooltip {
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+        }
+        .vehicle-tooltip .route-name {
+          font-size: 11px;
+          color: hsl(160, 72%, 45%);
+        }
+        .vehicle-tooltip .speed {
+          font-size: 11px;
+          color: hsl(220, 10%, 55%);
+        }
+        .stage-tooltip::before,
+        .vehicle-tip::before {
           border-top-color: hsl(220, 18%, 10%) !important;
         }
         .leaflet-container {
