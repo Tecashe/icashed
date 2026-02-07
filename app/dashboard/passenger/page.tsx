@@ -19,6 +19,8 @@ import {
   Search,
 } from "lucide-react"
 import Link from "next/link"
+import { StageCheckin } from "@/components/passenger/stage-checkin"
+import { NotificationToggle } from "@/components/notifications/notification-toggle"
 
 export default function PassengerDashboardPage() {
   const { user } = useAuth()
@@ -70,6 +72,9 @@ export default function PassengerDashboardPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Stage Check-in - I'm at a Stage */}
+      <StageCheckin />
 
       {/* Live Status Banner */}
       <div className="flex items-center justify-between rounded-2xl bg-muted p-4">

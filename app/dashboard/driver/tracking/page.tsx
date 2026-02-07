@@ -4,7 +4,8 @@ import { useState, useEffect, useCallback, useRef } from "react"
 import dynamic from "next/dynamic"
 import { toast } from "sonner"
 import { useMyVehicles } from "@/hooks/use-data"
-import { apiPost } from "@/lib/api-client"
+import useSWR from "swr"
+import { apiPost, fetcher } from "@/lib/api-client"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -16,16 +17,15 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import {
-  Navigation,
   Loader2,
   Power,
   PowerOff,
   MapPin,
-  Clock,
   Bus,
   Gauge,
-  Wifi,
-  WifiOff,
+  Users,
+  ChevronUp,
+  ChevronDown,
 } from "lucide-react"
 import type { MapVehicle } from "@/components/map/leaflet-map"
 import { cn } from "@/lib/utils"
@@ -35,12 +35,21 @@ const LeafletMap = dynamic(
   {
     ssr: false,
     loading: () => (
-      <div className="flex h-full w-full items-center justify-center rounded-2xl bg-muted/30">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      <div className="flex h-full w-full items-center justify-center bg-muted/30">
+        <Loader2 className="h-10 w-10 animate-spin text-muted-foreground" />
       </div>
     ),
   }
 )
+
+interface WaitingStage {
+  id: string
+  name: string
+  latitude: number
+  longitude: number
+  waitingCount: number
+  route: { name: string; color: string }
+}
 
 export default function DriverTrackingPage() {
   const { data } = useMyVehicles()
@@ -57,7 +66,18 @@ export default function DriverTrackingPage() {
   } | null>(null)
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
   const [updateCount, setUpdateCount] = useState(0)
+  const [showPanel, setShowPanel] = useState(true)
   const watchRef = useRef<number | null>(null)
+
+  // Get waiting passengers for driver's routes
+  const { data: waitingData } = useSWR<{ stages: WaitingStage[] }>(
+    tracking ? "/api/driver/stages/waiting" : null,
+    fetcher,
+    { refreshInterval: 30000 }
+  )
+
+  const stagesWithWaiting = waitingData?.stages?.filter((s) => s.waitingCount > 0) || []
+  const totalWaiting = stagesWithWaiting.reduce((sum, s) => sum + s.waitingCount, 0)
 
   // Auto-select first vehicle
   useEffect(() => {
@@ -157,173 +177,164 @@ export default function DriverTrackingPage() {
     : []
 
   return (
-    <div className="flex flex-col gap-6">
-      {/* Header - Simple */}
-      <div className="text-center">
-        <h1 className="font-display text-2xl font-bold text-foreground">
-          Live Tracking
-        </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Let passengers find you on the map
-        </p>
+    <div className="relative -m-4 -mb-24 flex h-[calc(100vh-4rem)] flex-col lg:-m-6 lg:-mb-6 lg:h-[calc(100vh-4rem)]">
+      {/* Full-screen Map */}
+      <div className="absolute inset-0">
+        <LeafletMap
+          vehicles={mapVehicles}
+          center={position ? [position.lat, position.lng] : [-1.2921, 36.8219]}
+          zoom={position ? 15 : 12}
+          showRouteLines={false}
+          enableAnimation={true}
+        />
       </div>
 
-      {/* Vehicle Selector */}
-      {!tracking && (
-        <Card>
-          <CardContent className="p-4">
-            <label className="mb-2 block text-sm font-medium text-muted-foreground">
-              Select Vehicle
-            </label>
-            <Select
-              value={selectedVehicleId}
-              onValueChange={setSelectedVehicleId}
-              disabled={tracking}
-            >
-              <SelectTrigger className="h-14 text-base">
-                <SelectValue placeholder="Choose your vehicle..." />
-              </SelectTrigger>
-              <SelectContent>
-                {vehicles.map((v) => (
-                  <SelectItem key={v.id} value={v.id} className="py-3">
-                    <div className="flex items-center gap-2">
-                      <Bus className="h-5 w-5" />
-                      <span className="font-medium">{v.plateNumber}</span>
-                      {v.nickname && (
-                        <span className="text-muted-foreground">- {v.nickname}</span>
-                      )}
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* BIG START/STOP BUTTON */}
-      <div className="flex flex-col items-center gap-4">
-        {tracking ? (
-          <button
-            type="button"
-            onClick={stopTracking}
-            className="group relative flex h-40 w-40 items-center justify-center rounded-full bg-destructive shadow-lg shadow-destructive/30 transition-all hover:scale-105 hover:shadow-xl hover:shadow-destructive/40 active:scale-95"
-          >
-            <PowerOff className="h-16 w-16 text-destructive-foreground" />
-            <span className="absolute -bottom-8 text-sm font-semibold text-destructive">
-              TAP TO STOP
-            </span>
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={startTracking}
-            disabled={!selectedVehicleId}
-            className={cn(
-              "group relative flex h-40 w-40 items-center justify-center rounded-full shadow-lg transition-all hover:scale-105 active:scale-95",
-              selectedVehicleId
-                ? "bg-primary shadow-primary/30 hover:shadow-xl hover:shadow-primary/40"
-                : "bg-muted cursor-not-allowed"
-            )}
-          >
-            <Power className={cn(
-              "h-16 w-16",
-              selectedVehicleId ? "text-primary-foreground" : "text-muted-foreground"
-            )} />
-            <span className={cn(
-              "absolute -bottom-8 text-sm font-semibold",
-              selectedVehicleId ? "text-primary" : "text-muted-foreground"
-            )}>
-              {selectedVehicleId ? "TAP TO START" : "SELECT VEHICLE"}
-            </span>
-          </button>
-        )}
-      </div>
-
-      {/* Status when tracking */}
+      {/* Floating Status Badges (when tracking) */}
       {tracking && (
-        <Card className="border-primary/30 bg-primary/5">
-          <CardContent className="flex items-center justify-between p-4">
-            <div className="flex items-center gap-3">
-              <span className="relative flex h-4 w-4">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
-                <span className="relative inline-flex h-4 w-4 rounded-full bg-primary" />
-              </span>
-              <div>
-                <p className="font-semibold text-primary">Broadcasting LIVE</p>
-                <p className="text-sm text-muted-foreground">
-                  {selectedVehicle?.plateNumber}
-                </p>
-              </div>
-            </div>
-            <Badge variant="secondary" className="text-sm">
-              {updateCount} updates
-            </Badge>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Live Stats - Only when tracking */}
-      {tracking && position && (
-        <div className="grid grid-cols-2 gap-3">
-          <Card>
-            <CardContent className="flex flex-col items-center p-4 text-center">
-              <Gauge className="h-8 w-8 text-primary" />
-              <p className="mt-2 text-3xl font-bold text-foreground">
-                {position.speed}
-              </p>
-              <p className="text-sm text-muted-foreground">km/h</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="flex flex-col items-center p-4 text-center">
-              <Clock className="h-8 w-8 text-muted-foreground" />
-              <p className="mt-2 text-xl font-bold text-foreground">
-                {lastUpdate?.toLocaleTimeString([], {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                  second: "2-digit"
-                }) ?? "--:--"}
-              </p>
-              <p className="text-sm text-muted-foreground">Last Update</p>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {/* Map */}
-      <div className="overflow-hidden rounded-2xl border border-border">
-        <div className="relative h-[300px] md:h-[400px]">
-          {tracking && position && (
-            <Badge className="absolute left-3 top-3 z-20 gap-2 bg-primary text-primary-foreground hover:bg-primary">
+        <>
+          {/* LIVE Badge */}
+          <div className="absolute left-4 top-4 z-20">
+            <Badge className="gap-2 bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground shadow-lg">
               <span className="relative flex h-2 w-2">
                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary-foreground opacity-75" />
                 <span className="relative inline-flex h-2 w-2 rounded-full bg-primary-foreground" />
               </span>
               LIVE
             </Badge>
+          </div>
+
+          {/* Speed Badge */}
+          {position && (
+            <div className="absolute right-4 top-4 z-20">
+              <div className="flex items-center gap-2 rounded-xl bg-card/95 px-3 py-2 shadow-lg backdrop-blur-sm">
+                <Gauge className="h-5 w-5 text-primary" />
+                <span className="text-xl font-bold text-foreground">{position.speed}</span>
+                <span className="text-sm text-muted-foreground">km/h</span>
+              </div>
+            </div>
           )}
-          <LeafletMap
-            vehicles={mapVehicles}
-            center={position ? [position.lat, position.lng] : [-1.2921, 36.8219]}
-            zoom={position ? 15 : 12}
-            showRouteLines={false}
-            enableAnimation={true}
-          />
+
+          {/* Waiting Passengers Badge */}
+          {totalWaiting > 0 && (
+            <div className="absolute left-4 top-14 z-20">
+              <div className="flex items-center gap-2 rounded-xl bg-amber-500/90 px-3 py-2 shadow-lg">
+                <Users className="h-5 w-5 text-white" />
+                <span className="text-sm font-semibold text-white">
+                  {totalWaiting} waiting
+                </span>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Bottom Control Panel */}
+      <div
+        className={cn(
+          "absolute bottom-0 left-0 right-0 z-20 transition-transform duration-300",
+          "pb-[calc(60px+env(safe-area-inset-bottom))] lg:pb-0",
+          !showPanel && !tracking && "translate-y-[calc(100%-60px)]"
+        )}
+      >
+        {/* Toggle Panel Button */}
+        {!tracking && (
+          <button
+            onClick={() => setShowPanel(!showPanel)}
+            className="absolute -top-4 left-1/2 z-10 flex h-8 w-16 -translate-x-1/2 items-center justify-center rounded-full bg-card shadow-lg border border-border"
+          >
+            {showPanel ? (
+              <ChevronDown className="h-5 w-5 text-muted-foreground" />
+            ) : (
+              <ChevronUp className="h-5 w-5 text-muted-foreground" />
+            )}
+          </button>
+        )}
+
+        <div className="rounded-t-3xl border-t border-border bg-card/95 p-4 shadow-2xl backdrop-blur-lg">
+          {/* Vehicle Selector - Only when not tracking */}
+          {!tracking && (
+            <div className="mb-4">
+              <label className="mb-2 block text-sm font-medium text-muted-foreground">
+                Select Vehicle
+              </label>
+              <Select
+                value={selectedVehicleId}
+                onValueChange={setSelectedVehicleId}
+              >
+                <SelectTrigger className="h-14 text-base">
+                  <SelectValue placeholder="Choose your vehicle..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {vehicles.map((v) => (
+                    <SelectItem key={v.id} value={v.id} className="py-3">
+                      <div className="flex items-center gap-2">
+                        <Bus className="h-5 w-5" />
+                        <span className="font-medium">{v.plateNumber}</span>
+                        {v.nickname && (
+                          <span className="text-muted-foreground">- {v.nickname}</span>
+                        )}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {/* Status when tracking */}
+          {tracking && (
+            <div className="mb-4 flex items-center justify-between rounded-xl border border-primary/30 bg-primary/5 p-3">
+              <div className="flex items-center gap-3">
+                <span className="relative flex h-4 w-4">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
+                  <span className="relative inline-flex h-4 w-4 rounded-full bg-primary" />
+                </span>
+                <div>
+                  <p className="font-semibold text-primary">Broadcasting LIVE</p>
+                  <p className="text-sm text-muted-foreground">
+                    {selectedVehicle?.plateNumber}
+                  </p>
+                </div>
+              </div>
+              <Badge variant="secondary" className="text-sm">
+                {updateCount} updates
+              </Badge>
+            </div>
+          )}
+
+          {/* BIG START/STOP BUTTON */}
+          <div className="flex justify-center">
+            {tracking ? (
+              <Button
+                onClick={stopTracking}
+                size="lg"
+                variant="destructive"
+                className="h-16 w-full gap-3 text-lg font-bold shadow-lg shadow-destructive/25 sm:w-auto sm:px-12"
+              >
+                <PowerOff className="h-6 w-6" />
+                STOP TRACKING
+              </Button>
+            ) : (
+              <Button
+                onClick={startTracking}
+                disabled={!selectedVehicleId}
+                size="lg"
+                className="h-16 w-full gap-3 text-lg font-bold shadow-lg shadow-primary/25 hover:shadow-xl sm:w-auto sm:px-12"
+              >
+                <Power className="h-6 w-6" />
+                GO LIVE
+              </Button>
+            )}
+          </div>
+
+          {/* Empty State Hint */}
+          {!tracking && !selectedVehicleId && (
+            <p className="mt-3 text-center text-sm text-muted-foreground">
+              Select a vehicle above to start tracking
+            </p>
+          )}
         </div>
       </div>
-
-      {/* Empty State */}
-      {!tracking && !position && (
-        <div className="flex flex-col items-center rounded-2xl border border-dashed border-border py-8 text-center">
-          <MapPin className="h-12 w-12 text-muted-foreground/30" />
-          <p className="mt-4 text-base font-medium text-muted-foreground">
-            {selectedVehicleId
-              ? "Tap the green button to go live"
-              : "Select a vehicle above to start"}
-          </p>
-        </div>
-      )}
     </div>
   )
 }

@@ -21,10 +21,13 @@ model User {
   createdAt      DateTime  @default(now()) @map("created_at")
   updatedAt      DateTime  @updatedAt @map("updated_at")
 
-  sessions       Session[]
-  vehicles       Vehicle[]
-  savedRoutes    SavedRoute[]
-  reports        Report[]
+  sessions          Session[]
+  vehicles          Vehicle[]
+  savedRoutes       SavedRoute[]
+  reports           Report[]
+  pushSubscriptions PushSubscription[]
+  presenceRecords   PassengerPresence[]
+  reviews           Review[]
 
   @@map("users")
 }
@@ -63,10 +66,11 @@ model Route {
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
-  stages     Stage[]
-  vehicles   VehicleRoute[]
-  savedBy    SavedRoute[]
-  routePath  RoutePath[]
+  stages            Stage[]
+  vehicles          VehicleRoute[]
+  savedBy           SavedRoute[]
+  routePath         RoutePath[]
+  passengerPresence PassengerPresence[]
 
   @@map("routes")
 }
@@ -80,7 +84,8 @@ model Stage {
   order     Int
   isTerminal Boolean @default(false) @map("is_terminal")
 
-  route Route @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  route             Route @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  waitingPassengers PassengerPresence[]
 
   @@unique([routeId, order])
   @@map("stages")
@@ -118,6 +123,7 @@ model Vehicle {
   routes        VehicleRoute[]
   images        VehicleImage[]
   positions     VehiclePosition[]
+  reviews       Review[]
 
   @@map("vehicles")
 }
@@ -209,4 +215,52 @@ enum ReportStatus {
   PENDING
   REVIEWED
   RESOLVED
+}
+
+// ─── Phase 2: Push Notifications ─────────────────────────────
+
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("push_subscriptions")
+}
+
+// ─── Phase 2: Passenger Presence ─────────────────────────────
+
+model PassengerPresence {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  stageId   String   @map("stage_id")
+  routeId   String   @map("route_id")
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stage Stage @relation(fields: [stageId], references: [id], onDelete: Cascade)
+  route Route @relation(fields: [routeId], references: [id], onDelete: Cascade)
+
+  @@map("passenger_presence")
+}
+
+// ─── Phase 2: Driver Reviews ─────────────────────────────────
+
+model Review {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  vehicleId String   @map("vehicle_id")
+  rating    Int      // 1-5 stars
+  comment   String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  @@map("reviews")
 }
