@@ -479,6 +479,39 @@ export default function DriverTrackingPage() {
             </div>
           )}
 
+          {/* Next Stage ETA Card */}
+          {progress?.nextStage && (
+            <div className="rounded-xl bg-gradient-to-r from-primary/10 via-accent/10 to-primary/5 border border-primary/20 p-4 mb-4">
+              <div className="flex items-center gap-3">
+                <div className="relative">
+                  <div className="h-12 w-12 rounded-full bg-primary/20 flex items-center justify-center">
+                    <MapPin className="h-6 w-6 text-primary" />
+                  </div>
+                  {/* Pulsating ring */}
+                  <span className="absolute inset-0 rounded-full animate-ping bg-primary/30" />
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm text-muted-foreground">Next Stop</p>
+                  <p className="font-bold text-lg text-foreground">
+                    {progress.nextStage.name}
+                  </p>
+                  <div className="flex items-center gap-3 mt-1">
+                    {progress.etaToNextStage !== undefined && (
+                      <span className="inline-flex items-center gap-1 text-sm font-medium text-primary">
+                        <span className="text-lg">{progress.etaToNextStage}</span> min away
+                      </span>
+                    )}
+                    {progress.distanceToNextStage !== undefined && (
+                      <span className="text-sm text-muted-foreground">
+                        ({(progress.distanceToNextStage / 1000).toFixed(1)} km)
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Waiting Passengers */}
           {totalWaiting > 0 && (
             <div className="flex items-center gap-2 rounded-lg bg-amber-500/10 border border-amber-500/30 px-3 py-2 mb-4">
