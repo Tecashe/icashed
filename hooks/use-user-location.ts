@@ -95,6 +95,19 @@ export function useUserLocation(
     useEffect(() => {
         if (!watch || !isSupported) return
 
+        // First request to trigger permission prompt
+        setIsLoading(true)
+
+        // Get initial position to trigger permission
+        navigator.geolocation.getCurrentPosition(
+            (position) => {
+                handleSuccess(position)
+                // Now start watching after permission is granted
+            },
+            handleError,
+            { enableHighAccuracy, timeout, maximumAge }
+        )
+
         const watchId = navigator.geolocation.watchPosition(
             handleSuccess,
             handleError,

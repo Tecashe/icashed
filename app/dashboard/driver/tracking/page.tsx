@@ -196,7 +196,7 @@ export default function DriverTrackingPage() {
       (err) => {
         toast.error("GPS Error", { description: err.message })
       },
-      { enableHighAccuracy: true, maximumAge: 3000, timeout: 10000 }
+      { enableHighAccuracy: true, maximumAge: 5000, timeout: 30000 }
     )
   }, [selectedVehicleId, vehicles, sendPosition])
 

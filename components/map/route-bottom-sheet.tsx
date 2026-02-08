@@ -72,7 +72,7 @@ export function RouteBottomSheet({
             {/* Backdrop */}
             {isOpen && (
                 <div
-                    className="fixed inset-0 z-40 bg-background/60 backdrop-blur-sm md:hidden"
+                    className="fixed inset-0 z-[10000] bg-background/60 backdrop-blur-sm md:hidden"
                     onClick={onClose}
                 />
             )}
@@ -81,7 +81,7 @@ export function RouteBottomSheet({
             <div
                 ref={sheetRef}
                 className={cn(
-                    "fixed bottom-0 left-0 right-0 z-50 rounded-t-3xl border-t border-border bg-card shadow-2xl transition-transform duration-300 ease-out md:hidden",
+                    "fixed bottom-0 left-0 right-0 z-[10001] rounded-t-3xl border-t border-border bg-card shadow-2xl transition-transform duration-300 ease-out md:hidden",
                     isOpen ? "translate-y-0" : "translate-y-full"
                 )}
                 style={{ maxHeight: "85vh" }}
