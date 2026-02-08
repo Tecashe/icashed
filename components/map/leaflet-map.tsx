@@ -81,6 +81,7 @@ interface LeafletMapProps {
   nearestStage?: NearestStageData | null
   showUserLocation?: boolean
   showGuidancePath?: boolean
+  flyToLocation?: { lat: number; lng: number; zoom?: number } | null
 }
 
 // ============================================================================
@@ -306,6 +307,7 @@ export function LeafletMap({
   nearestStage,
   showUserLocation = true,
   showGuidancePath = true,
+  flyToLocation,
 }: LeafletMapProps) {
   const mapRef = useRef<L.Map | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -356,6 +358,16 @@ export function LeafletMap({
       mapRef.current = null
     }
   }, [center, zoom])
+
+  // Fly to location when flyToLocation prop changes
+  useEffect(() => {
+    if (!mapRef.current || !mounted || !flyToLocation) return
+    mapRef.current.flyTo(
+      [flyToLocation.lat, flyToLocation.lng],
+      flyToLocation.zoom || 15,
+      { duration: 1.5 }
+    )
+  }, [flyToLocation, mounted])
 
   // Draw routes
   useEffect(() => {

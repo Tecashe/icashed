@@ -50,6 +50,7 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
   const [selectedVehicle, setSelectedVehicle] = useState<LivePosition | null>(null)
   const [showRouteSheet, setShowRouteSheet] = useState(false)
   const [showDesktopSidebar, setShowDesktopSidebar] = useState(true)
+  const [flyToLocation, setFlyToLocation] = useState<{ lat: number; lng: number; zoom?: number } | null>(null)
   const mapRef = useRef<{ flyTo?: (lat: number, lng: number, zoom?: number) => void }>(null)
 
   // Real-time data
@@ -236,9 +237,8 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
   }
 
   const handleCenterUser = (lat: number, lng: number) => {
-    // This will be passed to LeafletMap for centering
-    // For now, we can trigger a fly-to animation
-    console.log("Center on user:", lat, lng)
+    // Set flyToLocation which is passed to LeafletMap
+    setFlyToLocation({ lat, lng, zoom: 16 })
   }
 
   // Get selected route name for display
@@ -433,6 +433,7 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
             nearestStage={nearestStage && nearestStage.distance > NEAR_STAGE_THRESHOLD ? nearestStage : null}
             showUserLocation={true}
             showGuidancePath={nearestStage ? nearestStage.distance > NEAR_STAGE_THRESHOLD : false}
+            flyToLocation={flyToLocation}
           />
         </Suspense>
 
@@ -663,3 +664,4 @@ function DesktopVehiclePanel({ vehicle, progress, routes, onClose }: DesktopVehi
     </div>
   )
 }
+
