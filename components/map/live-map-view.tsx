@@ -619,17 +619,12 @@ interface LiveMapViewProps {
 
 // Vehicle reliability score based on historical data (mock for now)
 function calculateReliabilityScore(vehicleId: string): number {
-  // In production, this would be based on:
-  // - Punctuality history
-  // - Completion rate
-  // - User ratings
-  // For now, return random score between 3-5
   return 3.5 + Math.random() * 1.5
 }
 
 // Estimate ETA based on distance and average speed
 function calculateETA(distanceMeters: number, currentSpeed: number): number {
-  if (currentSpeed < 5) return Math.ceil(distanceMeters / (20 * 1000 / 60)) // Assume 20 km/h if stationary
+  if (currentSpeed < 5) return Math.ceil(distanceMeters / (20 * 1000 / 60))
   return Math.ceil(distanceMeters / (currentSpeed * 1000 / 60))
 }
 
@@ -767,7 +762,6 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
         p.routes.some(r => r.id === route.id) && p.position.speed > 5
       ).length
 
-      // Calculate average reliability
       const vehiclesOnRoute = allPositions.filter(p => p.routes.some(r => r.id === route.id))
       const avgReliability = vehiclesOnRoute.length > 0
         ? vehiclesOnRoute.reduce((sum, v) => sum + calculateReliabilityScore(v.vehicleId), 0) / vehiclesOnRoute.length
@@ -775,7 +769,6 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
 
       return { ...route, vehicleCount, activeVehicleCount, avgReliability }
     }).sort((a, b) => {
-      // Sort by: 1) active vehicles, 2) total vehicles, 3) reliability
       if (b.activeVehicleCount !== a.activeVehicleCount) return b.activeVehicleCount - a.activeVehicleCount
       if (b.vehicleCount !== a.vehicleCount) return b.vehicleCount - a.vehicleCount
       return b.avgReliability - a.avgReliability
@@ -799,6 +792,13 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
   useEffect(() => {
     setSelectedRouteId(null)
   }, [originStage?.name, destinationStage?.name])
+
+  // Auto-fly to user location when it first loads
+  useEffect(() => {
+    if (userLocation && !flyToLocation) {
+      setFlyToLocation({ lat: userLocation.latitude, lng: userLocation.longitude, zoom: 14 })
+    }
+  }, [userLocation, flyToLocation])
 
   // ═══════════════════════════════════════════════════════════════════
   // VEHICLE FILTERING & SORTING
@@ -839,7 +839,7 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
     return filtered
   }, [selectedRouteId, allPositions, userLocation, filterBySpeed, showOnlyReliable])
 
-  // Transform vehicles for map - include origin, dest, distance, ETA
+  // Transform vehicles for map
   const mapVehicles: MapVehicle[] = useMemo(() => {
     return activeVehicles.map((v) => {
       const vehicleRoute = v.routes[0]
@@ -854,7 +854,6 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
         originStageName = sortedStages[0].name
         destinationStageName = sortedStages[sortedStages.length - 1].name
 
-        // Find next stage based on vehicle position
         let minDist = Infinity
         let nextStage = null
         for (const stage of sortedStages) {
@@ -1019,20 +1018,24 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
   }, [manualOrigin, locationLoading, locationError, nearestStageToGPS])
 
   return (
-    <div className="flex flex-col h-full bg-background">
+    <div className="flex flex-col h-full bg-background relative">
       {/* ═══════════════════════════════════════════════════════════════════
-          COMPACT MOBILE-FIRST HEADER
+          IMPROVED COMPACT HEADER - Better dropdown handling
       ═══════════════════════════════════════════════════════════════════ */}
-      <div className="flex-shrink-0 border-b border-border bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/80">
+      <div className="flex-shrink-0 border-b border-border bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/80 relative z-20">
 
-        {/* Search Bar - Collapsible on mobile */}
+        {/* Search Bar */}
         <div className="px-3 py-2 space-y-2">
           {/* FROM / TO */}
           <div className="grid grid-cols-2 gap-2">
             {/* FROM */}
             <div className="relative">
               <div
-                onClick={() => { setIsEditingOrigin(true); setShowOriginDropdown(true) }}
+                onClick={() => {
+                  setIsEditingOrigin(true);
+                  setShowOriginDropdown(true);
+                  setShowDestinationDropdown(false); // Close destination when opening origin
+                }}
                 className={cn(
                   "flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition-colors h-11 active:scale-95",
                   locationError ? "bg-destructive/5 border-destructive/30" : "bg-primary/5 border-primary/20",
@@ -1047,8 +1050,10 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
                   <p className="text-sm font-medium truncate">{originDisplayText}</p>
                 </div>
               </div>
+
+              {/* IMPROVED Origin Dropdown - Fixed positioning */}
               {showOriginDropdown && isEditingOrigin && (
-                <div className="absolute left-0 right-0 top-full mt-1 z-[10000] rounded-lg border border-border bg-card shadow-xl overflow-hidden max-h-48 overflow-y-auto">
+                <div className="absolute left-0 right-0 top-full mt-1 z-[100] rounded-lg border border-border bg-card shadow-2xl overflow-hidden">
                   <div className="p-2 border-b border-border sticky top-0 bg-card">
                     <Input
                       placeholder="Search stage..."
@@ -1058,17 +1063,23 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
                       className="h-8 text-sm"
                     />
                   </div>
-                  <ScrollArea className="max-h-40">
-                    {filteredOriginStages.map((stage) => (
-                      <button
-                        key={stage.id}
-                        onClick={() => handleSelectOrigin(stage)}
-                        className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-muted text-sm active:bg-muted/80"
-                      >
-                        <MapPin className="h-3 w-3 text-primary" />
-                        <span>{stage.name}</span>
-                      </button>
-                    ))}
+                  <ScrollArea className="max-h-60">
+                    {filteredOriginStages.length > 0 ? (
+                      filteredOriginStages.map((stage) => (
+                        <button
+                          key={stage.id}
+                          onClick={() => handleSelectOrigin(stage)}
+                          className="flex w-full items-center gap-2 px-3 py-2.5 text-left hover:bg-muted active:bg-muted/80 text-sm transition-colors"
+                        >
+                          <MapPin className="h-3.5 w-3.5 text-primary flex-shrink-0" />
+                          <span className="flex-1">{stage.name}</span>
+                        </button>
+                      ))
+                    ) : (
+                      <div className="px-3 py-4 text-sm text-muted-foreground text-center">
+                        No stages found
+                      </div>
+                    )}
                   </ScrollArea>
                   <button
                     onClick={() => { setIsEditingOrigin(false); setShowOriginDropdown(false) }}
@@ -1082,7 +1093,12 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
 
             {/* TO */}
             <div className="relative">
-              <div className="flex items-center gap-2 p-2 rounded-lg border bg-muted border-border h-11">
+              <div
+                onClick={() => {
+                  setShowDestinationDropdown(true);
+                  setShowOriginDropdown(false); // Close origin when opening destination
+                }}
+                className="flex items-center gap-2 p-2 rounded-lg border bg-muted border-border h-11 cursor-pointer active:scale-95">
                 <div className="h-7 w-7 rounded-full bg-accent/20 flex items-center justify-center flex-shrink-0">
                   <Navigation className="h-3.5 w-3.5 text-accent" />
                 </div>
@@ -1092,29 +1108,29 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
                     placeholder="Destination..."
                     value={destination}
                     onChange={(e) => { setDestination(e.target.value); setShowDestinationDropdown(true) }}
-                    onFocus={() => setShowDestinationDropdown(true)}
-                    onBlur={() => setTimeout(() => setShowDestinationDropdown(false), 200)}
+                    onFocus={() => { setShowDestinationDropdown(true); setShowOriginDropdown(false) }}
                     className="border-0 p-0 h-5 text-sm font-medium bg-transparent focus-visible:ring-0"
                   />
                 </div>
                 {destination && (
-                  <button onClick={() => setDestination("")} className="p-1 active:scale-90">
+                  <button onClick={(e) => { e.stopPropagation(); setDestination("") }} className="p-1 active:scale-90">
                     <X className="h-3 w-3 text-muted-foreground" />
                   </button>
                 )}
               </div>
+
+              {/* IMPROVED Destination Dropdown */}
               {showDestinationDropdown && filteredDestStages.length > 0 && (
-                <div className="absolute left-0 right-0 top-full mt-1 z-[10000] rounded-lg border border-border bg-card shadow-xl overflow-hidden max-h-48">
-                  <ScrollArea className="max-h-48">
+                <div className="absolute left-0 right-0 top-full mt-1 z-[100] rounded-lg border border-border bg-card shadow-2xl overflow-hidden">
+                  <ScrollArea className="max-h-60">
                     {filteredDestStages.map((stage) => (
                       <button
                         key={stage.id}
-                        onMouseDown={(e) => e.preventDefault()}
                         onClick={() => handleSelectDest(stage)}
-                        className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-muted text-sm active:bg-muted/80"
+                        className="flex w-full items-center gap-2 px-3 py-2.5 text-left hover:bg-muted active:bg-muted/80 text-sm transition-colors"
                       >
-                        <Navigation className="h-3 w-3 text-accent" />
-                        <span>{stage.name}</span>
+                        <Navigation className="h-3.5 w-3.5 text-accent flex-shrink-0" />
+                        <span className="flex-1">{stage.name}</span>
                       </button>
                     ))}
                   </ScrollArea>
@@ -1123,7 +1139,7 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
             </div>
           </div>
 
-          {/* Quick Actions - Mobile */}
+          {/* Quick Actions */}
           <div className="flex items-center gap-2">
             {(manualOrigin || destination) && (
               <Button
@@ -1149,27 +1165,43 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
           </div>
         </div>
 
-        {/* Stage Guidance - Show if user is FAR from nearest stage */}
-        {userLocation && nearestStageToGPS && !isUserNearStage && (
-          <div className="mx-3 mb-2 flex items-center gap-2 rounded-lg bg-blue-500/10 border border-blue-500/30 px-3 py-2 text-sm active:scale-95 cursor-pointer transition-transform"
-            onClick={() => nearestStage && setFlyToLocation({ lat: nearestStage.stage.lat, lng: nearestStage.stage.lng, zoom: 16 })}>
-            <div className="relative flex-shrink-0">
-              <Footprints className="h-4 w-4 text-blue-500" />
-              <span className="absolute -top-0.5 -right-0.5 flex h-2 w-2">
+        {/* ENHANCED Walking Guidance - More prominent */}
+        {userLocation && nearestStageToGPS && !isUserNearStage && nearestStage && (
+          <div
+            className="mx-3 mb-2 flex items-start gap-3 rounded-lg bg-gradient-to-r from-blue-500/15 to-blue-600/10 border-2 border-blue-500/40 px-3 py-3 cursor-pointer active:scale-[0.98] transition-all shadow-sm"
+            onClick={() => setFlyToLocation({ lat: nearestStage.stage.lat, lng: nearestStage.stage.lng, zoom: 17 })}
+          >
+            <div className="relative flex-shrink-0 mt-0.5">
+              <div className="h-10 w-10 rounded-full bg-blue-500/20 flex items-center justify-center">
+                <Footprints className="h-5 w-5 text-blue-500" />
+              </div>
+              <span className="absolute -top-1 -right-1 flex h-3 w-3">
                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-400 opacity-75" />
-                <span className="relative inline-flex h-2 w-2 rounded-full bg-blue-500" />
+                <span className="relative inline-flex h-3 w-3 rounded-full bg-blue-500" />
               </span>
             </div>
             <div className="flex-1 min-w-0">
-              <span className="text-blue-700 dark:text-blue-400 truncate block">
-                Walk to <strong>{nearestStageToGPS.name}</strong>
-              </span>
-              <span className="text-blue-600/70 dark:text-blue-400/70 text-xs">
-                {distanceToNearestStage ? `${(distanceToNearestStage / 1000).toFixed(1)}km` : "—"} •
-                {nearestStage?.walkingTime || "—"} min walk
-              </span>
+              <p className="text-sm font-semibold text-blue-700 dark:text-blue-400 mb-0.5">
+                Walk to nearest stage
+              </p>
+              <p className="text-lg font-bold text-blue-800 dark:text-blue-300 mb-1 truncate">
+                {nearestStageToGPS.name}
+              </p>
+              <div className="flex items-center gap-3 text-xs text-blue-600/80 dark:text-blue-400/80">
+                <span className="flex items-center gap-1">
+                  <MapPin className="h-3 w-3" />
+                  {distanceToNearestStage ? `${(distanceToNearestStage / 1000).toFixed(1)}km` : "—"}
+                </span>
+                <span className="flex items-center gap-1">
+                  <Clock className="h-3 w-3" />
+                  {nearestStage.walkingTime} min walk
+                </span>
+              </div>
+              <p className="text-[10px] text-blue-600/60 dark:text-blue-400/60 mt-1">
+                Tap to show walking route on map
+              </p>
             </div>
-            <ChevronRight className="h-4 w-4 text-blue-500 flex-shrink-0" />
+            <ChevronRight className="h-5 w-5 text-blue-500 flex-shrink-0 mt-2" />
           </div>
         )}
 
@@ -1184,11 +1216,9 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
         )}
       </div>
 
-      {/* ═══════════════════════════════════════════════════════════════════
-          ROUTE SUGGESTIONS - Horizontal Scroll
-      ═══════════════════════════════════════════════════════════════════ */}
+      {/* Route suggestions... (keeping same as before) */}
       {suggestedRoutes.length > 0 && (
-        <div className="flex-shrink-0 border-b border-border bg-card/50 px-3 py-2">
+        <div className="flex-shrink-0 border-b border-border bg-card/50 px-3 py-2 relative z-10">
           <div className="flex items-center justify-between mb-1.5">
             <p className="text-[10px] font-medium text-muted-foreground">
               🚌 {suggestedRoutes.length} Route{suggestedRoutes.length > 1 ? "s" : ""} Available
@@ -1242,7 +1272,7 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
 
       {/* No routes message */}
       {originStage && destinationStage && suggestedRoutes.length === 0 && (
-        <div className="flex-shrink-0 px-3 py-2 bg-amber-500/10 border-b border-amber-500/20">
+        <div className="flex-shrink-0 px-3 py-2 bg-amber-500/10 border-b border-amber-500/20 relative z-10">
           <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400 text-sm">
             <AlertTriangle className="h-4 w-4 flex-shrink-0" />
             <p className="flex-1">No direct routes found. Try nearby stages.</p>
@@ -1250,11 +1280,9 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
         </div>
       )}
 
-      {/* ═══════════════════════════════════════════════════════════════════
-          NEARBY VEHICLES - Show when GPS active & no route selected
-      ═══════════════════════════════════════════════════════════════════ */}
+      {/* Nearby vehicles panel... (keeping same) */}
       {userLocation && !selectedRouteId && nearbyVehiclesSorted.length > 0 && (
-        <div className="flex-shrink-0 border-b border-border bg-gradient-to-r from-primary/5 to-accent/5 px-3 py-2">
+        <div className="flex-shrink-0 border-b border-border bg-gradient-to-r from-primary/5 to-accent/5 px-3 py-2 relative z-10">
           <div className="flex items-center justify-between mb-1.5">
             <p className="text-[10px] font-medium text-muted-foreground">
               📍 Vehicles Near You
@@ -1320,9 +1348,9 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
       )}
 
       {/* ═══════════════════════════════════════════════════════════════════
-          MAP SECTION - Maximum space, mobile optimized
+          MAP SECTION - FIXED HEIGHT
       ═══════════════════════════════════════════════════════════════════ */}
-      <div className="flex-1 relative min-h-0 touch-pan-y touch-pan-x">
+      <div className="flex-1 relative min-h-0 touch-pan-y touch-pan-x" style={{ minHeight: '400px' }}>
         <Suspense fallback={
           <div className="flex h-full items-center justify-center bg-muted/30">
             <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -1346,11 +1374,8 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
           />
         </Suspense>
 
-        {/* ───────────────────────────────────────────────────────────────
-             FLOATING ACTION BUTTONS - Mobile Optimized
-        ─────────────────────────────────────────────────────────────── */}
+        {/* FABs, stats, etc - same as before */}
         <div className="absolute bottom-4 right-4 flex flex-col gap-2 z-10">
-          {/* My Location - Primary FAB */}
           <Button
             size="icon"
             className="h-12 w-12 rounded-full shadow-lg active:scale-95"
@@ -1364,7 +1389,6 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
             )}
           </Button>
 
-          {/* Full Screen Toggle */}
           {onToggleFullScreen && (
             <Button
               variant="secondary"
@@ -1381,7 +1405,6 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
           )}
         </div>
 
-        {/* Connection Status & Stats - Top Right */}
         <div className="absolute top-3 right-3 flex flex-col gap-2 z-10">
           <Badge variant={isRealtime ? "default" : "secondary"} className="shadow-sm text-[10px] bg-card/95 backdrop-blur">
             {isRealtime ? "🟢 Live" : "📡 Connecting"}
@@ -1394,7 +1417,6 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
           )}
         </div>
 
-        {/* Quick Info Panel - Bottom Left, collapsible on mobile */}
         {selectedRouteId && mapVehicles.length > 0 && (
           <div className="absolute bottom-4 left-4 z-10 max-w-[200px]">
             <div className="bg-card/95 backdrop-blur rounded-lg border border-border shadow-lg p-3 space-y-2 text-xs">
@@ -1429,9 +1451,7 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
         )}
       </div>
 
-      {/* ═══════════════════════════════════════════════════════════════════
-          VEHICLE DETAILS DRAWER - Mobile Bottom Sheet
-      ═══════════════════════════════════════════════════════════════════ */}
+      {/* Drawers - same as before */}
       <Drawer open={showVehicleDetails} onOpenChange={setShowVehicleDetails}>
         <DrawerContent className="max-h-[85vh]">
           <DrawerHeader className="border-b">
@@ -1451,7 +1471,6 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
 
           {selectedVehicle && (
             <div className="p-4 space-y-4 overflow-y-auto">
-              {/* Live Status */}
               <div className="flex items-center gap-2 p-3 bg-green-500/10 border border-green-500/30 rounded-lg">
                 <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
                 <span className="text-sm font-medium text-green-700 dark:text-green-400">
@@ -1459,7 +1478,6 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
                 </span>
               </div>
 
-              {/* Distance & ETA */}
               {selectedVehicle.distanceFromUser !== undefined && (
                 <div className="grid grid-cols-2 gap-3">
                   <div className="p-3 bg-card border rounded-lg">
@@ -1482,7 +1500,6 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
                 </div>
               )}
 
-              {/* Route Info */}
               <div className="space-y-2">
                 <p className="text-xs font-medium text-muted-foreground">Route Information</p>
                 <div className="p-3 bg-card border rounded-lg space-y-2">
@@ -1504,7 +1521,6 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
                 </div>
               </div>
 
-              {/* Reliability Score */}
               <div className="space-y-2">
                 <p className="text-xs font-medium text-muted-foreground">Reliability</p>
                 <div className="p-3 bg-card border rounded-lg">
@@ -1532,7 +1548,6 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
                 </div>
               </div>
 
-              {/* Actions */}
               <div className="grid grid-cols-2 gap-2">
                 <Button variant="outline" className="gap-2">
                   <Share2 className="h-4 w-4" />
@@ -1544,7 +1559,6 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
                 </Button>
               </div>
 
-              {/* Center on Map */}
               <Button
                 className="w-full gap-2"
                 onClick={() => {
@@ -1560,9 +1574,6 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
         </DrawerContent>
       </Drawer>
 
-      {/* ═══════════════════════════════════════════════════════════════════
-          FILTER SHEET - Mobile Bottom Sheet
-      ═══════════════════════════════════════════════════════════════════ */}
       <Drawer open={showRouteSheet} onOpenChange={setShowRouteSheet}>
         <DrawerContent>
           <DrawerHeader>
@@ -1571,7 +1582,6 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
           </DrawerHeader>
 
           <div className="p-4 space-y-4">
-            {/* Speed Filter */}
             <div className="space-y-2">
               <p className="text-sm font-medium">Vehicle Status</p>
               <div className="grid grid-cols-3 gap-2">
@@ -1590,7 +1600,6 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
               </div>
             </div>
 
-            {/* Reliability Filter */}
             <div className="flex items-center justify-between p-3 bg-card border rounded-lg">
               <div className="flex items-center gap-2">
                 <Star className="h-4 w-4 text-yellow-400" />
@@ -1605,7 +1614,6 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
               </Button>
             </div>
 
-            {/* Stats */}
             <div className="p-3 bg-muted/50 rounded-lg space-y-1 text-xs text-muted-foreground">
               <div className="flex justify-between">
                 <span>Vehicles shown:</span>

@@ -1413,10 +1413,10 @@ export function LeafletMap({
       zoomControl: false,
       attributionControl: false,
       // Mobile optimizations
-      // tap: true,
       tapTolerance: 15,
       touchZoom: true,
       bounceAtZoomLimits: false,
+      preferCanvas: true, // Better performance on mobile
     })
 
     // Dark theme tiles
