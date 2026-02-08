@@ -239,7 +239,7 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
       {/* ─── Map Area ───────────────────────────────────────────── */}
       <div className="relative flex-1">
         {/* Top Controls - Clean, minimal */}
-        <div className="absolute top-3 left-3 right-3 z-20 flex items-center justify-between pointer-events-none">
+        <div className="absolute top-3 left-3 right-3 z-[9999] flex items-center justify-between pointer-events-none">
           {/* Route Filter Pill (Mobile) */}
           <Button
             variant="secondary"
@@ -291,7 +291,7 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
 
         {/* Approaching Vehicle Alert */}
         {selectedRouteId && (
-          <div className="absolute left-1/2 top-16 z-20 -translate-x-1/2">
+          <div className="absolute left-1/2 top-16 z-[9999] -translate-x-1/2">
             <ApproachingVehicleBadge
               routeId={selectedRouteId}
               onVehicleClick={(vehicleId) => {
@@ -325,7 +325,7 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
         </Suspense>
 
         {/* FAB Controls (Mobile) */}
-        <div className="absolute bottom-6 right-4 z-20 md:hidden">
+        <div className="absolute bottom-6 right-4 z-[9999] md:hidden">
           <MapFAB
             onCenterUser={handleCenterUser}
             onToggleFullScreen={onToggleFullScreen}
@@ -335,7 +335,7 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
         </div>
 
         {/* FAB Controls (Desktop) */}
-        <div className="absolute bottom-6 right-4 z-20 hidden md:block">
+        <div className="absolute bottom-6 right-4 z-[9999] hidden md:block">
           <MapFAB
             onCenterUser={handleCenterUser}
             onToggleFullScreen={onToggleFullScreen}
@@ -348,7 +348,7 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
 
         {/* Desktop Vehicle Panel */}
         {selectedVehicle && (
-          <div className="absolute bottom-6 left-4 z-20 hidden md:block w-80 max-h-[calc(100vh-10rem)] overflow-hidden rounded-2xl border border-border bg-card shadow-xl">
+          <div className="absolute bottom-6 left-4 z-[9999] hidden md:block w-80 max-h-[calc(100vh-10rem)] overflow-hidden rounded-2xl border border-border bg-card shadow-xl">
             <DesktopVehiclePanel
               vehicle={selectedVehicle}
               progress={vehicleProgress}
