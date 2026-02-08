@@ -31,6 +31,8 @@ import { useRoutes, type LivePosition, type RouteData } from "@/hooks/use-data"
 import { useVehicleProgress, type RouteWithStages } from "@/hooks/use-vehicle-progress"
 import { ReviewForm } from "@/components/reviews/review-form"
 import { VehicleImageGallery } from "@/components/vehicles/vehicle-gallery"
+import { ApproachingVehicleBadge } from "@/components/passenger/approaching-vehicle-alert"
+import { StageNavigator } from "@/components/passenger/stage-navigator"
 import { VEHICLE_TYPE_LABELS } from "@/lib/constants"
 import { cn } from "@/lib/utils"
 import type { MapVehicle, MapRoute } from "@/components/map/leaflet-map"
@@ -53,8 +55,9 @@ const LeafletMap = dynamic(
 export function LiveMapView() {
   const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null)
   const [selectedVehicle, setSelectedVehicle] = useState<LivePosition | null>(null)
-  const [showSidebar, setShowSidebar] = useState(true)
+  const [showSidebar, setShowSidebar] = useState(false) // Start closed on mobile
   const [mobileSheetExpanded, setMobileSheetExpanded] = useState(false)
+  const [showNavigator, setShowNavigator] = useState(false)
 
   // Use real-time positions instead of polling
   const { positions: allPositions, isRealtime, connectionState } = useRealtimePositions()
@@ -313,6 +316,22 @@ export function LiveMapView() {
           </span>
         </div>
 
+        {/* Approaching Vehicle Alert Badge */}
+        {selectedRouteId && (
+          <div className="absolute left-1/2 top-3 z-30 -translate-x-1/2">
+            <ApproachingVehicleBadge
+              routeId={selectedRouteId}
+              onVehicleClick={(vehicleId) => {
+                const lp = allPositions.find((p) => p.vehicleId === vehicleId)
+                if (lp) {
+                  setSelectedVehicle(lp)
+                  setMobileSheetExpanded(true)
+                }
+              }}
+            />
+          </div>
+        )}
+
         {/* Leaflet Map */}
         <Suspense
           fallback={
@@ -335,13 +354,15 @@ export function LiveMapView() {
 
         {/* ─── Desktop Vehicle Panel ───────────────────────────── */}
         {selectedVehicle && (
-          <div className="absolute bottom-4 right-4 z-20 hidden w-96 rounded-2xl border border-border bg-card p-4 shadow-xl md:block">
-            <VehicleDetails
-              vehicle={selectedVehicle}
-              progress={vehicleProgress}
-              route={selectedRoute}
-              onClose={closeVehiclePanel}
-            />
+          <div className="absolute bottom-4 right-4 z-30 hidden w-80 max-h-[calc(100vh-8rem)] overflow-hidden rounded-2xl border border-border bg-card shadow-xl md:block">
+            <div className="max-h-[calc(100vh-8rem)] overflow-y-auto p-4">
+              <VehicleDetails
+                vehicle={selectedVehicle}
+                progress={vehicleProgress}
+                route={selectedRoute}
+                onClose={closeVehiclePanel}
+              />
+            </div>
           </div>
         )}
 

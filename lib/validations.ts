@@ -66,6 +66,7 @@ export const positionUpdateSchema = z.object({
   longitude: z.number().min(-180).max(180),
   speed: z.number().min(0).default(0),
   heading: z.number().min(0).max(360).default(0),
+  accuracy: z.number().min(0).optional(),
 })
 
 // Type exports for use across web & mobile
