@@ -23,6 +23,9 @@ export interface MapVehicle {
   progress?: number // 0-100% along route
   etaMinutes?: number // ETA to terminus
   nextStageName?: string // Name of next stage
+  originStageName?: string // Starting point of route
+  destinationStageName?: string // End point of route
+  distanceFromUser?: number // Distance in meters from passenger
 }
 
 export interface MapStage {
@@ -469,19 +472,30 @@ export function LeafletMap({
         const marker = L.marker([vehicle.lat, vehicle.lng], { icon, zIndexOffset: 1000 })
         vehicleIconStateRef.current.set(vehicle.id, { isSelected, isLive, heading: vehicle.heading || 0 })
 
-        // Rich tooltip
+        // Rich tooltip with origin → destination and distance
+        const distanceText = vehicle.distanceFromUser !== undefined
+          ? vehicle.distanceFromUser < 1000
+            ? `${Math.round(vehicle.distanceFromUser)}m away`
+            : `${(vehicle.distanceFromUser / 1000).toFixed(1)}km away`
+          : ''
+
+        const directionText = vehicle.originStageName && vehicle.destinationStageName
+          ? `${vehicle.originStageName} → ${vehicle.destinationStageName}`
+          : vehicle.routeName
+
         const tooltipHtml = `
           <div class="vehicle-tooltip-premium">
             <div class="tooltip-header">
               <strong>${vehicle.plateNumber}</strong>
               ${vehicle.isLive ? '<span class="live-dot"></span>' : ''}
             </div>
-            <div class="tooltip-route">${vehicle.routeName}</div>
+            <div class="tooltip-direction">${directionText}</div>
             <div class="tooltip-stats">
               <span class="stat"><span class="icon">⚡</span> ${Math.round(vehicle.speed)} km/h</span>
+              ${distanceText ? `<span class="stat distance"><span class="icon">📍</span> ${distanceText}</span>` : ''}
               ${vehicle.etaMinutes !== undefined ? `<span class="stat"><span class="icon">🕐</span> ${vehicle.etaMinutes} min</span>` : ''}
             </div>
-            ${vehicle.nextStageName ? `<div class="tooltip-next">Next: ${vehicle.nextStageName}</div>` : ''}
+            ${vehicle.nextStageName ? `<div class="tooltip-next">Next stop: ${vehicle.nextStageName}</div>` : ''}
           </div>
         `
 
@@ -489,6 +503,7 @@ export function LeafletMap({
           direction: "top",
           offset: [0, -24],
           className: "vehicle-tip-premium",
+          permanent: false,
         })
 
         marker.on("click", () => onVehicleClick?.(vehicle))

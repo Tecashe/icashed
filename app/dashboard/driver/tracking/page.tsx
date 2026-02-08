@@ -32,10 +32,13 @@ import {
   Route,
   Crosshair,
   Radio,
-  CircleDot,
+  AlertTriangle,
+  CheckCircle2,
 } from "lucide-react"
-import type { MapVehicle, MapRoute } from "@/components/map/leaflet-map"
+import type { MapVehicle, MapRoute, UserLocationData } from "@/components/map/leaflet-map"
 import { cn } from "@/lib/utils"
+import { calculateDistance } from "@/lib/geo-utils"
+import { useUserLocation } from "@/hooks/use-user-location"
 
 const LeafletMap = dynamic(
   () => import("@/components/map/leaflet-map").then((m) => m.LeafletMap),
@@ -43,7 +46,7 @@ const LeafletMap = dynamic(
     ssr: false,
     loading: () => (
       <div className="flex h-full w-full items-center justify-center bg-muted/30">
-        <Loader2 className="h-10 w-10 animate-spin text-muted-foreground" />
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
       </div>
     ),
   }
@@ -58,11 +61,18 @@ interface WaitingStage {
   route: { name: string; color: string }
 }
 
+// Distance threshold in meters for "at stage"
+const STAGE_PROXIMITY_THRESHOLD = 500 // 500m = at/near stage
+const STAGE_WARNING_THRESHOLD = 2000 // 2km = show warning
+
 export default function DriverTrackingPage() {
   const { data } = useMyVehicles()
   const vehicles = data?.vehicles || []
   const { data: routesData } = useRoutes({ limit: 100 })
   const routes = routesData?.routes || []
+
+  // Get driver's current GPS location
+  const { location: driverGPS, isLoading: gpsLoading } = useUserLocation({ watch: true })
 
   // Selection state
   const [selectedVehicleId, setSelectedVehicleId] = useState<string>("")
@@ -82,7 +92,7 @@ export default function DriverTrackingPage() {
   const [flyToLocation, setFlyToLocation] = useState<{ lat: number; lng: number; zoom?: number } | null>(null)
   const watchRef = useRef<number | null>(null)
 
-  // Get waiting passengers for driver's routes
+  // Get waiting passengers
   const { data: waitingData } = useSWR<{ stages: WaitingStage[] }>(
     tracking ? "/api/driver/stages/waiting" : null,
     fetcher,
@@ -119,32 +129,53 @@ export default function DriverTrackingPage() {
       .filter((r): r is RouteWithStages => r !== null)
   }, [selectedVehicle, routes])
 
-  // Get selected route for display
+  // Get selected route
   const selectedRoute = useMemo(() => {
     if (!selectedRouteId) return vehicleRoutes[0]
     return vehicleRoutes.find(r => r.id === selectedRouteId) || vehicleRoutes[0]
   }, [selectedRouteId, vehicleRoutes])
 
-  // Get route direction labels (terminals)
+  // Get route terminals
   const routeTerminals = useMemo(() => {
     if (!selectedRoute || selectedRoute.stages.length < 2) return null
     const stages = [...selectedRoute.stages].sort((a, b) => (a.order || 0) - (b.order || 0))
     const firstStage = stages[0]
     const lastStage = stages[stages.length - 1]
     return {
-      forward: { from: firstStage.name, to: lastStage.name },
-      reverse: { from: lastStage.name, to: firstStage.name },
+      forward: { from: firstStage, to: lastStage },
+      reverse: { from: lastStage, to: firstStage },
     }
   }, [selectedRoute])
 
-  // Calculate progress along route
+  // Get origin stage based on direction
+  const originStage = useMemo(() => {
+    if (!routeTerminals) return null
+    return direction === "forward" ? routeTerminals.forward.from : routeTerminals.reverse.from
+  }, [routeTerminals, direction])
+
+  // Calculate distance from driver to origin stage
+  const distanceToOrigin = useMemo(() => {
+    if (!driverGPS || !originStage) return null
+    return calculateDistance(
+      driverGPS.latitude,
+      driverGPS.longitude,
+      originStage.latitude,
+      originStage.longitude
+    )
+  }, [driverGPS, originStage])
+
+  // Location status: "at_stage" | "near_stage" | "far" | "unknown"
+  const locationStatus = useMemo(() => {
+    if (!distanceToOrigin) return "unknown"
+    if (distanceToOrigin <= STAGE_PROXIMITY_THRESHOLD) return "at_stage"
+    if (distanceToOrigin <= STAGE_WARNING_THRESHOLD) return "near_stage"
+    return "far"
+  }, [distanceToOrigin])
+
+  // Calculate progress
   const currentPosition = position ? { latitude: position.lat, longitude: position.lng } : null
   const routesForProgress = selectedRoute ? [selectedRoute] : []
-  const progress = useVehicleProgress(
-    currentPosition,
-    routesForProgress,
-    selectedVehicle?.type || "MATATU"
-  )
+  const progress = useVehicleProgress(currentPosition, routesForProgress, selectedVehicle?.type || "MATATU")
 
   // Auto-select first vehicle
   useEffect(() => {
@@ -181,7 +212,7 @@ export default function DriverTrackingPage() {
         })
         setUpdateCount((c) => c + 1)
       } catch {
-        // Silent retry next tick
+        // Silent retry
       }
     },
     [selectedVehicleId, selectedRouteId, direction]
@@ -197,7 +228,7 @@ export default function DriverTrackingPage() {
       return
     }
     if (!navigator.geolocation) {
-      toast.error("GPS not supported on this device")
+      toast.error("GPS not supported")
       return
     }
 
@@ -205,19 +236,15 @@ export default function DriverTrackingPage() {
     setUpdateCount(0)
 
     const vehicle = vehicles.find((v) => v.id === selectedVehicleId)
-    const directionLabel = routeTerminals
-      ? `${direction === "forward" ? routeTerminals.forward.from : routeTerminals.reverse.from} → ${direction === "forward" ? routeTerminals.forward.to : routeTerminals.reverse.to}`
+    const dirLabel = routeTerminals
+      ? `${direction === "forward" ? routeTerminals.forward.from.name : routeTerminals.reverse.from.name} → ${direction === "forward" ? routeTerminals.forward.to.name : routeTerminals.reverse.to.name}`
       : ""
 
-    toast.success("You're now LIVE! 🟢", {
-      description: `${vehicle?.plateNumber} heading ${directionLabel}`,
-    })
+    toast.success("You're now LIVE! 🟢", { description: `${vehicle?.plateNumber} heading ${dirLabel}` })
 
     watchRef.current = navigator.geolocation.watchPosition(
       sendPosition,
-      (err) => {
-        toast.error("GPS Error", { description: err.message })
-      },
+      (err) => toast.error("GPS Error", { description: err.message }),
       { enableHighAccuracy: true, maximumAge: 5000, timeout: 30000 }
     )
   }, [selectedVehicleId, selectedRouteId, direction, vehicles, routeTerminals, sendPosition])
@@ -228,7 +255,7 @@ export default function DriverTrackingPage() {
       watchRef.current = null
     }
     setTracking(false)
-    toast.info("Tracking stopped", { description: `${updateCount} location updates sent` })
+    toast.info("Tracking stopped", { description: `${updateCount} updates sent` })
   }, [updateCount])
 
   useEffect(() => {
@@ -246,28 +273,29 @@ export default function DriverTrackingPage() {
   }
 
   // Map data
-  const mapVehicles: MapVehicle[] = position
-    ? [
-      {
-        id: selectedVehicleId || "self",
-        plateNumber: selectedVehicle?.plateNumber || "You",
-        nickname: selectedVehicle?.nickname,
-        type: selectedVehicle?.type || "MATATU",
-        lat: position.lat,
-        lng: position.lng,
-        speed: position.speed,
-        heading: position.heading,
-        color: selectedRoute?.color || "#10B981",
-        routeName: selectedRoute?.name || "Your Route",
-        isLive: true,
-        progress: progress?.progress,
-        etaMinutes: progress?.etaToTerminus,
-        nextStageName: progress?.nextStage?.name,
-      },
-    ]
-    : []
+  const userLocation: UserLocationData | null = position ? {
+    latitude: position.lat,
+    longitude: position.lng,
+    accuracy: position.accuracy,
+  } : driverGPS
 
-  // Map routes - show selected route
+  const mapVehicles: MapVehicle[] = position ? [{
+    id: selectedVehicleId || "self",
+    plateNumber: selectedVehicle?.plateNumber || "You",
+    nickname: selectedVehicle?.nickname,
+    type: selectedVehicle?.type || "MATATU",
+    lat: position.lat,
+    lng: position.lng,
+    speed: position.speed,
+    heading: position.heading,
+    color: selectedRoute?.color || "#10B981",
+    routeName: selectedRoute?.name || "",
+    isLive: true,
+    progress: progress?.progress,
+    etaMinutes: progress?.etaToTerminus,
+    nextStageName: progress?.nextStage?.name,
+  }] : []
+
   const mapRoutes: MapRoute[] = selectedRoute ? [{
     id: selectedRoute.id,
     name: selectedRoute.name,
@@ -283,118 +311,127 @@ export default function DriverTrackingPage() {
     })),
   }] : []
 
-  // Validation for Go Live
   const canGoLive = selectedVehicleId && selectedRouteId && routeTerminals
 
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)] bg-background">
       {/* ═══════════════════════════════════════════════════════════════════
-          CONTROL SECTION - Fixed at top
+          COMPACT CONTROL SECTION
       ═══════════════════════════════════════════════════════════════════ */}
       {!tracking ? (
-        <div className="flex-shrink-0 border-b border-border bg-card px-4 py-4 space-y-4">
+        <div className="flex-shrink-0 border-b border-border bg-card px-3 py-2 space-y-2">
 
-          {/* Vehicle Selector */}
-          <div>
-            <Label className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-2">
-              <Bus className="h-4 w-4" />
-              Select Your Vehicle
-            </Label>
-            <Select
-              value={selectedVehicleId}
-              onValueChange={(v) => {
-                setSelectedVehicleId(v)
-                setSelectedRouteId("") // Reset route when vehicle changes
-              }}
-            >
-              <SelectTrigger className="h-12 text-base">
-                <SelectValue placeholder="Choose a vehicle..." />
-              </SelectTrigger>
-              <SelectContent>
-                {vehicles.map((v) => (
-                  <SelectItem key={v.id} value={v.id} className="py-3">
-                    <div className="flex items-center gap-2">
-                      <Bus className="h-4 w-4" />
-                      <span className="font-semibold">{v.plateNumber}</span>
-                      {v.nickname && (
-                        <span className="text-muted-foreground">({v.nickname})</span>
-                      )}
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Route Selector */}
-          {vehicleRoutes.length > 0 && (
+          {/* Vehicle & Route Row - Side by Side */}
+          <div className="grid grid-cols-2 gap-2">
             <div>
-              <Label className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-2">
-                <Route className="h-4 w-4" />
-                Select Route
+              <Label className="text-[10px] font-medium text-muted-foreground mb-1 flex items-center gap-1">
+                <Bus className="h-3 w-3" /> Vehicle
               </Label>
               <Select
-                value={selectedRouteId}
-                onValueChange={setSelectedRouteId}
+                value={selectedVehicleId}
+                onValueChange={(v) => {
+                  setSelectedVehicleId(v)
+                  setSelectedRouteId("")
+                }}
               >
-                <SelectTrigger className="h-12 text-base">
-                  <SelectValue placeholder="Choose a route..." />
+                <SelectTrigger className="h-9 text-sm">
+                  <SelectValue placeholder="Select..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {vehicles.map((v) => (
+                    <SelectItem key={v.id} value={v.id}>
+                      <span className="font-medium">{v.plateNumber}</span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-[10px] font-medium text-muted-foreground mb-1 flex items-center gap-1">
+                <Route className="h-3 w-3" /> Route
+              </Label>
+              <Select value={selectedRouteId} onValueChange={setSelectedRouteId}>
+                <SelectTrigger className="h-9 text-sm">
+                  <SelectValue placeholder="Select..." />
                 </SelectTrigger>
                 <SelectContent>
                   {vehicleRoutes.map((r) => (
-                    <SelectItem key={r.id} value={r.id} className="py-3">
+                    <SelectItem key={r.id} value={r.id}>
                       <div className="flex items-center gap-2">
-                        <div
-                          className="h-3 w-3 rounded-full"
-                          style={{ backgroundColor: r.color }}
-                        />
-                        <span className="font-medium">{r.name}</span>
-                        <span className="text-xs text-muted-foreground">
-                          ({r.stages.length} stops)
-                        </span>
+                        <div className="h-2 w-2 rounded-full" style={{ backgroundColor: r.color }} />
+                        <span>{r.name}</span>
                       </div>
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
-          )}
+          </div>
 
-          {/* Direction Selector */}
+          {/* Direction - Compact Radio */}
           {routeTerminals && (
-            <div className="rounded-xl border border-border bg-muted/30 p-4">
-              <Label className="text-xs font-medium text-muted-foreground mb-3 flex items-center gap-2">
-                <Navigation className="h-4 w-4" />
-                Which direction are you heading?
+            <div className="rounded-lg border border-border bg-muted/30 p-2">
+              <Label className="text-[10px] font-medium text-muted-foreground mb-1.5 flex items-center gap-1">
+                <Navigation className="h-3 w-3" /> Direction
               </Label>
               <RadioGroup
                 value={direction}
                 onValueChange={(v) => setDirection(v as "forward" | "reverse")}
-                className="space-y-3"
+                className="flex flex-col gap-1.5"
               >
-                <div className="flex items-center space-x-3">
-                  <RadioGroupItem value="forward" id="forward" />
-                  <Label
-                    htmlFor="forward"
-                    className="flex-1 flex items-center gap-2 cursor-pointer text-base"
-                  >
-                    <span className="font-medium">{routeTerminals.forward.from}</span>
-                    <ArrowRight className="h-4 w-4 text-primary" />
-                    <span className="font-medium">{routeTerminals.forward.to}</span>
+                <div className="flex items-center gap-2">
+                  <RadioGroupItem value="forward" id="fwd" className="h-4 w-4" />
+                  <Label htmlFor="fwd" className="flex items-center gap-1.5 text-sm cursor-pointer">
+                    <span className="font-medium truncate max-w-[100px]">{routeTerminals.forward.from.name}</span>
+                    <ArrowRight className="h-3 w-3 text-primary flex-shrink-0" />
+                    <span className="font-medium truncate max-w-[100px]">{routeTerminals.forward.to.name}</span>
                   </Label>
                 </div>
-                <div className="flex items-center space-x-3">
-                  <RadioGroupItem value="reverse" id="reverse" />
-                  <Label
-                    htmlFor="reverse"
-                    className="flex-1 flex items-center gap-2 cursor-pointer text-base"
-                  >
-                    <span className="font-medium">{routeTerminals.reverse.from}</span>
-                    <ArrowRight className="h-4 w-4 text-primary" />
-                    <span className="font-medium">{routeTerminals.reverse.to}</span>
+                <div className="flex items-center gap-2">
+                  <RadioGroupItem value="reverse" id="rev" className="h-4 w-4" />
+                  <Label htmlFor="rev" className="flex items-center gap-1.5 text-sm cursor-pointer">
+                    <span className="font-medium truncate max-w-[100px]">{routeTerminals.reverse.from.name}</span>
+                    <ArrowRight className="h-3 w-3 text-primary flex-shrink-0" />
+                    <span className="font-medium truncate max-w-[100px]">{routeTerminals.reverse.to.name}</span>
                   </Label>
                 </div>
               </RadioGroup>
+            </div>
+          )}
+
+          {/* Location Status Banner */}
+          {originStage && !gpsLoading && (
+            <div className={cn(
+              "flex items-center gap-2 rounded-lg px-3 py-2 text-sm",
+              locationStatus === "at_stage" && "bg-green-500/10 border border-green-500/30 text-green-700 dark:text-green-400",
+              locationStatus === "near_stage" && "bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-400",
+              locationStatus === "far" && "bg-red-500/10 border border-red-500/30 text-red-700 dark:text-red-400",
+              locationStatus === "unknown" && "bg-muted border border-border text-muted-foreground"
+            )}>
+              {locationStatus === "at_stage" && (
+                <>
+                  <CheckCircle2 className="h-4 w-4 flex-shrink-0" />
+                  <span>You're at <strong>{originStage.name}</strong> ✓</span>
+                </>
+              )}
+              {locationStatus === "near_stage" && (
+                <>
+                  <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+                  <span>You're {distanceToOrigin ? `${(distanceToOrigin / 1000).toFixed(1)}km` : ""} from <strong>{originStage.name}</strong></span>
+                </>
+              )}
+              {locationStatus === "far" && (
+                <>
+                  <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+                  <span>Go to <strong>{originStage.name}</strong> ({distanceToOrigin ? `${(distanceToOrigin / 1000).toFixed(1)}km` : "?"} away)</span>
+                </>
+              )}
+              {locationStatus === "unknown" && (
+                <>
+                  <MapPin className="h-4 w-4 flex-shrink-0" />
+                  <span>Detecting your location...</span>
+                </>
+              )}
             </div>
           )}
 
@@ -403,122 +440,91 @@ export default function DriverTrackingPage() {
             onClick={startTracking}
             disabled={!canGoLive}
             size="lg"
-            className="w-full h-14 text-lg font-bold shadow-lg shadow-primary/25 gap-3"
+            className="w-full h-11 text-base font-bold shadow-md gap-2"
           >
-            <Power className="h-6 w-6" />
+            <Power className="h-5 w-5" />
             GO LIVE
           </Button>
-
-          {!canGoLive && (
-            <p className="text-center text-sm text-muted-foreground">
-              {!selectedVehicleId && "Select a vehicle to continue"}
-              {selectedVehicleId && !selectedRouteId && "Select a route to continue"}
-              {selectedVehicleId && selectedRouteId && !routeTerminals && "Loading route details..."}
-            </p>
-          )}
         </div>
       ) : (
         /* ═══════════════════════════════════════════════════════════════════
-           LIVE STATUS - Shows when tracking
+           COMPACT LIVE STATUS
         ═══════════════════════════════════════════════════════════════════ */
-        <div className="flex-shrink-0 border-b border-border bg-gradient-to-r from-primary/10 to-accent/10 px-4 py-4">
-          {/* Live Indicator */}
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-3">
+        <div className="flex-shrink-0 border-b border-border bg-gradient-to-r from-primary/10 to-accent/10 px-3 py-2">
+          {/* Status Row */}
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
               <div className="relative">
-                <Radio className="h-6 w-6 text-primary" />
-                <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                <Radio className="h-5 w-5 text-primary" />
+                <span className="absolute -top-0.5 -right-0.5 flex h-2.5 w-2.5">
                   <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
-                  <span className="relative inline-flex h-3 w-3 rounded-full bg-primary" />
+                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-primary" />
                 </span>
               </div>
               <div>
-                <p className="font-bold text-primary">LIVE</p>
-                <p className="text-sm text-muted-foreground">
-                  {selectedVehicle?.plateNumber}
-                </p>
+                <p className="font-bold text-sm text-primary leading-none">LIVE</p>
+                <p className="text-xs text-muted-foreground">{selectedVehicle?.plateNumber}</p>
               </div>
             </div>
-            <Badge variant="secondary" className="text-sm">
-              {updateCount} updates
-            </Badge>
-          </div>
-
-          {/* Route & Direction */}
-          <div className="flex items-center gap-2 mb-3 text-sm">
-            <div
-              className="h-3 w-3 rounded-full"
-              style={{ backgroundColor: selectedRoute?.color }}
-            />
-            <span className="font-medium">{selectedRoute?.name}</span>
-            <ArrowRight className="h-4 w-4 text-muted-foreground" />
-            <span className="text-muted-foreground">
-              {routeTerminals && (direction === "forward"
-                ? routeTerminals.forward.to
-                : routeTerminals.reverse.to)}
-            </span>
-          </div>
-
-          {/* Speed & Progress Row */}
-          {position && (
-            <div className="flex items-center gap-4 mb-4">
-              <div className="flex items-center gap-2 rounded-lg bg-card px-3 py-2">
-                <Gauge className="h-5 w-5 text-primary" />
-                <span className="text-xl font-bold">{position.speed}</span>
-                <span className="text-sm text-muted-foreground">km/h</span>
-              </div>
-              {progress && (
-                <div className="flex-1">
-                  <div className="flex justify-between text-xs text-muted-foreground mb-1">
-                    <span>Progress</span>
-                    <span>{Math.round(progress.progress)}%</span>
-                  </div>
-                  <Progress value={progress.progress} className="h-2" />
-                </div>
+            <div className="flex items-center gap-2">
+              {position && (
+                <Badge variant="secondary" className="text-xs">
+                  <Gauge className="h-3 w-3 mr-1" />
+                  {position.speed} km/h
+                </Badge>
               )}
+              <Badge variant="outline" className="text-xs">{updateCount} updates</Badge>
+            </div>
+          </div>
+
+          {/* Route Direction */}
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-2">
+            <div className="h-2 w-2 rounded-full" style={{ backgroundColor: selectedRoute?.color }} />
+            <span className="font-medium">{selectedRoute?.name}</span>
+            <ArrowRight className="h-3 w-3" />
+            <span>{routeTerminals && (direction === "forward" ? routeTerminals.forward.to.name : routeTerminals.reverse.to.name)}</span>
+          </div>
+
+          {/* Progress Bar */}
+          {progress && (
+            <div className="mb-2">
+              <div className="flex justify-between text-[10px] text-muted-foreground mb-0.5">
+                <span>Route Progress</span>
+                <span>{Math.round(progress.progress)}%</span>
+              </div>
+              <Progress value={progress.progress} className="h-1.5" />
             </div>
           )}
 
-          {/* Next Stage ETA Card */}
+          {/* Next Stage Card - Compact */}
           {progress?.nextStage && (
-            <div className="rounded-xl bg-gradient-to-r from-primary/10 via-accent/10 to-primary/5 border border-primary/20 p-4 mb-4">
-              <div className="flex items-center gap-3">
-                <div className="relative">
-                  <div className="h-12 w-12 rounded-full bg-primary/20 flex items-center justify-center">
-                    <MapPin className="h-6 w-6 text-primary" />
-                  </div>
-                  {/* Pulsating ring */}
-                  <span className="absolute inset-0 rounded-full animate-ping bg-primary/30" />
+            <div className="flex items-center gap-2 rounded-lg bg-card/80 border border-border p-2 mb-2">
+              <div className="relative flex-shrink-0">
+                <div className="h-8 w-8 rounded-full bg-primary/20 flex items-center justify-center">
+                  <MapPin className="h-4 w-4 text-primary" />
                 </div>
-                <div className="flex-1">
-                  <p className="text-sm text-muted-foreground">Next Stop</p>
-                  <p className="font-bold text-lg text-foreground">
-                    {progress.nextStage.name}
-                  </p>
-                  <div className="flex items-center gap-3 mt-1">
-                    {progress.etaToNextStage !== undefined && (
-                      <span className="inline-flex items-center gap-1 text-sm font-medium text-primary">
-                        <span className="text-lg">{progress.etaToNextStage}</span> min away
-                      </span>
-                    )}
-                    {progress.distanceToNextStage !== undefined && (
-                      <span className="text-sm text-muted-foreground">
-                        ({(progress.distanceToNextStage / 1000).toFixed(1)} km)
-                      </span>
-                    )}
-                  </div>
-                </div>
+                <span className="absolute inset-0 rounded-full animate-ping bg-primary/30" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-[10px] text-muted-foreground">Next Stop</p>
+                <p className="font-medium text-sm truncate">{progress.nextStage.name}</p>
+              </div>
+              <div className="text-right">
+                {progress.etaToNextStage !== undefined && (
+                  <p className="font-bold text-primary text-sm">{progress.etaToNextStage} min</p>
+                )}
+                {progress.distanceToNextStage !== undefined && (
+                  <p className="text-[10px] text-muted-foreground">{(progress.distanceToNextStage / 1000).toFixed(1)} km</p>
+                )}
               </div>
             </div>
           )}
 
           {/* Waiting Passengers */}
           {totalWaiting > 0 && (
-            <div className="flex items-center gap-2 rounded-lg bg-amber-500/10 border border-amber-500/30 px-3 py-2 mb-4">
-              <Users className="h-5 w-5 text-amber-600" />
-              <span className="text-sm font-medium text-amber-700 dark:text-amber-400">
-                {totalWaiting} passengers waiting along your route
-              </span>
+            <div className="flex items-center gap-2 rounded-lg bg-amber-500/10 border border-amber-500/30 px-2 py-1.5 mb-2 text-xs">
+              <Users className="h-3.5 w-3.5 text-amber-600" />
+              <span className="text-amber-700 dark:text-amber-400">{totalWaiting} passengers waiting</span>
             </div>
           )}
 
@@ -526,28 +532,30 @@ export default function DriverTrackingPage() {
           <Button
             onClick={stopTracking}
             variant="destructive"
-            size="lg"
-            className="w-full h-12 text-base font-bold gap-2"
+            size="sm"
+            className="w-full h-9 text-sm font-bold gap-1.5"
           >
-            <PowerOff className="h-5 w-5" />
+            <PowerOff className="h-4 w-4" />
             STOP TRACKING
           </Button>
         </div>
       )}
 
       {/* ═══════════════════════════════════════════════════════════════════
-          MAP SECTION - Takes remaining space
+          MAP SECTION - Maximum space
       ═══════════════════════════════════════════════════════════════════ */}
       <div className="flex-1 relative min-h-0">
         <LeafletMap
           vehicles={mapVehicles}
           routes={mapRoutes}
-          center={position ? [position.lat, position.lng] : [-1.2921, 36.8219]}
-          zoom={position ? 15 : 12}
+          center={position ? [position.lat, position.lng] : driverGPS ? [driverGPS.latitude, driverGPS.longitude] : [-1.2921, 36.8219]}
+          zoom={position ? 15 : 13}
           showRouteLines={true}
           enableAnimation={true}
           highlightActiveRoute={true}
           flyToLocation={flyToLocation}
+          userLocation={userLocation}
+          showUserLocation={!tracking && !!driverGPS}
         />
 
         {/* Center on Me FAB */}
@@ -555,15 +563,15 @@ export default function DriverTrackingPage() {
           <Button
             onClick={handleCenterOnMe}
             size="icon"
-            className="absolute bottom-4 right-4 h-12 w-12 rounded-full shadow-lg z-10"
+            className="absolute bottom-4 right-4 h-10 w-10 rounded-full shadow-lg z-10"
           >
-            <Crosshair className="h-5 w-5" />
+            <Crosshair className="h-4 w-4" />
           </Button>
         )}
 
-        {/* Vehicle count badge */}
+        {/* Status Badge */}
         <div className="absolute top-2 left-2 z-10">
-          <Badge variant="secondary" className="shadow-sm">
+          <Badge variant="secondary" className="shadow-sm text-xs">
             <MapPin className="h-3 w-3 mr-1" />
             {tracking ? "Tracking Active" : "Preview"}
           </Badge>

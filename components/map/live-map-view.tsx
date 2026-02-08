@@ -199,22 +199,52 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
     )
   }, [selectedRouteId, allPositions])
 
-  // Transform data for Leaflet
+  // Transform data for Leaflet - include origin, destination, distance from user
   const mapVehicles: MapVehicle[] = useMemo(() => {
-    return activeVehicles.map((v) => ({
-      id: v.vehicleId,
-      plateNumber: v.plateNumber,
-      nickname: v.nickname,
-      type: v.type,
-      lat: v.position.latitude,
-      lng: v.position.longitude,
-      speed: v.position.speed,
-      heading: v.position.heading,
-      color: v.routes[0]?.color || "#10B981",
-      routeName: v.routes.map((r) => r.name).join(", "),
-      isLive: isRealtime,
-    }))
-  }, [activeVehicles, isRealtime])
+    return activeVehicles.map((v) => {
+      // Get the route this vehicle is on
+      const vehicleRoute = v.routes[0]
+      const fullRoute = vehicleRoute ? routes.find(r => r.id === vehicleRoute.id) : null
+
+      // Get origin and destination from route stages (first and last)
+      let originStageName: string | undefined
+      let destinationStageName: string | undefined
+
+      if (fullRoute && fullRoute.stages.length >= 2) {
+        const sortedStages = [...fullRoute.stages].sort((a, b) => (a.order || 0) - (b.order || 0))
+        originStageName = sortedStages[0].name
+        destinationStageName = sortedStages[sortedStages.length - 1].name
+      }
+
+      // Calculate distance from user if user location is available
+      let distanceFromUser: number | undefined
+      if (userLocation) {
+        distanceFromUser = calculateDistance(
+          userLocation.latitude,
+          userLocation.longitude,
+          v.position.latitude,
+          v.position.longitude
+        )
+      }
+
+      return {
+        id: v.vehicleId,
+        plateNumber: v.plateNumber,
+        nickname: v.nickname,
+        type: v.type,
+        lat: v.position.latitude,
+        lng: v.position.longitude,
+        speed: v.position.speed,
+        heading: v.position.heading,
+        color: vehicleRoute?.color || "#10B981",
+        routeName: v.routes.map((r) => r.name).join(", "),
+        isLive: isRealtime,
+        originStageName,
+        destinationStageName,
+        distanceFromUser,
+      }
+    })
+  }, [activeVehicles, isRealtime, routes, userLocation])
 
   const mapRoutes: MapRoute[] = useMemo(() => {
     const filteredRoutes = selectedRouteId
