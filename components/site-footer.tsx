@@ -61,10 +61,10 @@ export function SiteFooter() {
 
         <div className="mt-10 flex flex-col items-center justify-between gap-4 border-t border-border pt-6 md:flex-row">
           <p className="text-xs text-muted-foreground">
-            {"2026 Radaa. Built for Kenya."}
+            {"2026 Radaa."}
           </p>
           <p className="text-xs text-muted-foreground">
-            Made with purpose in Nairobi
+            Made by Greatzern software solutions
           </p>
         </div>
       </div>

@@ -290,6 +290,8 @@ export function LeafletMap({
   const containerRef = useRef<HTMLDivElement>(null)
   const vehicleMarkersRef = useRef<Map<string, L.Marker>>(new Map())
   const vehiclePositionsRef = useRef<Map<string, { lat: number; lng: number }>>(new Map())
+  // Track icon state to prevent unnecessary re-renders that break CSS animations
+  const vehicleIconStateRef = useRef<Map<string, { isSelected: boolean; isLive: boolean; heading: number }>>(new Map())
   const routeLayersRef = useRef<L.LayerGroup | null>(null)
   const stageLayersRef = useRef<L.LayerGroup | null>(null)
   const progressLayersRef = useRef<L.LayerGroup | null>(null)
@@ -402,9 +404,10 @@ export function LeafletMap({
     // Update or add vehicle markers
     vehicles.forEach((vehicle) => {
       const isSelected = selectedVehicleId === vehicle.id
-      const icon = createVehicleIcon(vehicle, isSelected)
+      const isLive = vehicle.isLive !== false
       const existingMarker = vehicleMarkersRef.current.get(vehicle.id)
       const prevPos = vehiclePositionsRef.current.get(vehicle.id)
+      const prevIconState = vehicleIconStateRef.current.get(vehicle.id)
 
       if (existingMarker) {
         // Animate to new position if enabled
@@ -414,10 +417,23 @@ export function LeafletMap({
         } else {
           existingMarker.setLatLng([vehicle.lat, vehicle.lng])
         }
-        existingMarker.setIcon(icon)
+
+        // Only update icon if state changed - prevents CSS animation reset
+        const needsIconUpdate = !prevIconState ||
+          prevIconState.isSelected !== isSelected ||
+          prevIconState.isLive !== isLive ||
+          Math.abs(prevIconState.heading - (vehicle.heading || 0)) > 10 // Only update heading if changed significantly
+
+        if (needsIconUpdate) {
+          const icon = createVehicleIcon(vehicle, isSelected)
+          existingMarker.setIcon(icon)
+          vehicleIconStateRef.current.set(vehicle.id, { isSelected, isLive, heading: vehicle.heading || 0 })
+        }
       } else {
         // Create new marker
+        const icon = createVehicleIcon(vehicle, isSelected)
         const marker = L.marker([vehicle.lat, vehicle.lng], { icon, zIndexOffset: 1000 })
+        vehicleIconStateRef.current.set(vehicle.id, { isSelected, isLive, heading: vehicle.heading || 0 })
 
         // Rich tooltip
         const tooltipHtml = `
