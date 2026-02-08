@@ -25,7 +25,7 @@ export const searchRoutesSchema = z.object({
   county: z.string().optional(),
   active: z.boolean().optional(),
   page: z.number().int().positive().default(1),
-  limit: z.number().int().positive().max(50).default(20),
+  limit: z.number().int().positive().max(100).default(20),
 })
 
 // ─── Vehicles ────────────────────────────────────────────────
