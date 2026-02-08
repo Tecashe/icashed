@@ -11,6 +11,9 @@ import {
   ChevronRight,
   RefreshCw,
   Crosshair,
+  Edit3,
+  Check,
+  X,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -42,10 +45,18 @@ interface LiveMapViewProps {
 }
 
 export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMapViewProps) {
+  // Location state - support both GPS and manual entry
+  const [manualOrigin, setManualOrigin] = useState("")
+  const [isEditingOrigin, setIsEditingOrigin] = useState(false)
+  const [showOriginDropdown, setShowOriginDropdown] = useState(false)
+
+  // Destination state
   const [destination, setDestination] = useState("")
+  const [showDestinationDropdown, setShowDestinationDropdown] = useState(false)
+
+  // Route & vehicle state
   const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null)
   const [selectedVehicle, setSelectedVehicle] = useState<LivePosition | null>(null)
-  const [showDestinationDropdown, setShowDestinationDropdown] = useState(false)
   const [flyToLocation, setFlyToLocation] = useState<{ lat: number; lng: number; zoom?: number } | null>(null)
 
   // Real-time data
@@ -88,8 +99,17 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
     return stages
   }, [routes])
 
+  // Filter stages for origin autocomplete
+  const filteredOriginStages = useMemo(() => {
+    if (!manualOrigin.trim()) return allStages.slice(0, 5) // Show first 5 when empty
+    const query = manualOrigin.toLowerCase()
+    return allStages.filter(s =>
+      s.name.toLowerCase().includes(query)
+    ).slice(0, 5)
+  }, [manualOrigin, allStages])
+
   // Filter stages for destination autocomplete
-  const filteredStages = useMemo(() => {
+  const filteredDestinationStages = useMemo(() => {
     if (!destination.trim()) return []
     const query = destination.toLowerCase()
     return allStages.filter(s =>
@@ -97,8 +117,8 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
     ).slice(0, 5)
   }, [destination, allStages])
 
-  // Find nearest stage to user
-  const nearestStageToUser = useMemo(() => {
+  // Find nearest stage to GPS location
+  const nearestStageToGPS = useMemo(() => {
     if (!userLocation || allStages.length === 0) return null
     const stagesWithCoords = allStages.map(s => ({
       ...s,
@@ -109,6 +129,23 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
     return nearest?.location || null
   }, [userLocation, allStages])
 
+  // Determine origin stage - manual selection or GPS-based
+  const originStage = useMemo(() => {
+    // If user manually selected a stage, use that
+    if (manualOrigin) {
+      return allStages.find(s => s.name.toLowerCase() === manualOrigin.toLowerCase()) || null
+    }
+    // Otherwise use nearest to GPS
+    if (nearestStageToGPS) {
+      return {
+        ...nearestStageToGPS,
+        lat: nearestStageToGPS.latitude,
+        lng: nearestStageToGPS.longitude,
+      } as MapStage
+    }
+    return null
+  }, [manualOrigin, nearestStageToGPS, allStages])
+
   // Selected destination stage
   const destinationStage = useMemo(() => {
     return allStages.find(s => s.name.toLowerCase() === destination.toLowerCase()) || null
@@ -116,13 +153,15 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
 
   // Find routes that connect origin to destination
   const suggestedRoutes = useMemo(() => {
-    if (!nearestStageToUser || !destinationStage) return []
+    if (!originStage || !destinationStage) return []
 
-    // Find routes that have BOTH the nearest stage AND destination stage
+    // Find routes that have BOTH the origin stage AND destination stage
     return routes.filter(route => {
-      const stageIds = route.stages?.map(s => s.id) || []
-      const hasOrigin = stageIds.includes(nearestStageToUser.id!)
-      const hasDestination = stageIds.includes(destinationStage.id!)
+      const stageNames = route.stages?.map(s => s.name.toLowerCase()) || []
+      const originName = originStage.name?.toLowerCase() || ""
+      const destName = destinationStage.name.toLowerCase()
+      const hasOrigin = stageNames.includes(originName)
+      const hasDestination = stageNames.includes(destName)
       return hasOrigin && hasDestination
     }).map(route => {
       // Count vehicles on this route
@@ -131,7 +170,26 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
       ).length
       return { ...route, vehicleCount }
     })
-  }, [nearestStageToUser, destinationStage, routes, allPositions])
+  }, [originStage, destinationStage, routes, allPositions])
+
+  // Auto-select first suggested route and focus map
+  useEffect(() => {
+    if (suggestedRoutes.length > 0 && !selectedRouteId) {
+      const firstRoute = suggestedRoutes[0]
+      setSelectedRouteId(firstRoute.id)
+      // Focus map on route
+      if (firstRoute.stages.length > 0) {
+        const midIndex = Math.floor(firstRoute.stages.length / 2)
+        const midStage = firstRoute.stages[midIndex]
+        setFlyToLocation({ lat: midStage.latitude, lng: midStage.longitude, zoom: 13 })
+      }
+    }
+  }, [suggestedRoutes, selectedRouteId])
+
+  // Reset route selection when origin/destination changes
+  useEffect(() => {
+    setSelectedRouteId(null)
+  }, [originStage?.name, destinationStage?.name])
 
   // Vehicles for selected route
   const activeVehicles = useMemo(() => {
@@ -179,33 +237,40 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
     }))
   }, [routes, selectedRouteId])
 
-  // Calculate nearest stage for guidance
+  // Calculate nearest stage for guidance path
   const nearestStage: NearestStageData | null = useMemo(() => {
-    if (!userLocation || !nearestStageToUser) return null
+    if (!userLocation || !originStage) return null
     const distance = calculateDistance(
       userLocation.latitude,
       userLocation.longitude,
-      nearestStageToUser.lat,
-      nearestStageToUser.lng
+      originStage.lat,
+      originStage.lng
     )
     const walkingTime = Math.ceil(distance / 80) // ~80m per minute walking
     return {
-      stage: nearestStageToUser,
+      stage: originStage,
       distance,
       walkingTime,
-      direction: "N", // Simplified
+      direction: "N",
     }
-  }, [userLocation, nearestStageToUser])
+  }, [userLocation, originStage])
 
   // Handlers
+  const handleSelectOrigin = (stage: MapStage) => {
+    setManualOrigin(stage.name)
+    setShowOriginDropdown(false)
+    setIsEditingOrigin(false)
+  }
+
   const handleSelectDestination = (stage: MapStage) => {
     setDestination(stage.name)
     setShowDestinationDropdown(false)
+    // Focus map on destination
+    setFlyToLocation({ lat: stage.lat, lng: stage.lng, zoom: 14 })
   }
 
   const handleSelectRoute = (routeId: string) => {
     setSelectedRouteId(routeId)
-    // Fly to route bounds
     const route = routes.find(r => r.id === routeId)
     if (route && route.stages.length > 0) {
       const midStage = route.stages[Math.floor(route.stages.length / 2)]
@@ -221,49 +286,114 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
     }
   }
 
+  const handleStartEditOrigin = () => {
+    setIsEditingOrigin(true)
+    setShowOriginDropdown(true)
+    setManualOrigin("")
+  }
+
+  const handleCancelEditOrigin = () => {
+    setIsEditingOrigin(false)
+    setShowOriginDropdown(false)
+    setManualOrigin("")
+  }
+
   // Location display text
-  const locationText = useMemo(() => {
+  const originDisplayText = useMemo(() => {
+    if (manualOrigin) return manualOrigin
     if (locationLoading) return "Detecting your location..."
-    if (locationError) return "Location unavailable"
-    if (nearestStageToUser) return `Near ${nearestStageToUser.name}`
+    if (locationError) return "Location unavailable - tap to enter manually"
+    if (nearestStageToGPS) return `Near ${nearestStageToGPS.name}`
     if (userLocation) return `${userLocation.latitude.toFixed(4)}, ${userLocation.longitude.toFixed(4)}`
-    return "Tap to enable location"
-  }, [locationLoading, locationError, nearestStageToUser, userLocation])
+    return "Tap to enter your location"
+  }, [manualOrigin, locationLoading, locationError, nearestStageToGPS, userLocation])
+
+  const hasLocationError = locationError || (!locationLoading && !userLocation && !manualOrigin)
 
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)] bg-background">
       {/* ═══════════════════════════════════════════════════════════════════
-          HEADER SECTION - Fixed at top, never overlaps map
+          HEADER SECTION - Fixed at top
       ═══════════════════════════════════════════════════════════════════ */}
       <div className="flex-shrink-0 border-b border-border bg-card px-4 py-3 space-y-3">
 
-        {/* Your Location (Auto-detected) */}
-        <div className="flex items-center gap-3 p-3 rounded-xl bg-primary/5 border border-primary/20">
-          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
-            <MapPin className="h-5 w-5 text-primary" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-xs text-muted-foreground">Your Location</p>
-            <p className="font-medium text-foreground truncate">
-              {locationText}
-            </p>
-          </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8"
-            onClick={requestLocation}
-            disabled={locationLoading}
-          >
-            <RefreshCw className={cn("h-4 w-4", locationLoading && "animate-spin")} />
-          </Button>
+        {/* Your Location - GPS or Manual */}
+        <div className="relative">
+          {!isEditingOrigin ? (
+            <div
+              className={cn(
+                "flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-colors",
+                hasLocationError ? "bg-destructive/5 border-destructive/30" : "bg-primary/5 border-primary/20",
+                "hover:bg-primary/10"
+              )}
+              onClick={handleStartEditOrigin}
+            >
+              <div className={cn(
+                "flex h-10 w-10 items-center justify-center rounded-full",
+                hasLocationError ? "bg-destructive/10" : "bg-primary/10"
+              )}>
+                <MapPin className={cn("h-5 w-5", hasLocationError ? "text-destructive" : "text-primary")} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs text-muted-foreground">Your Location</p>
+                <p className={cn(
+                  "font-medium truncate",
+                  hasLocationError ? "text-destructive" : "text-foreground"
+                )}>
+                  {originDisplayText}
+                </p>
+              </div>
+              <Button variant="ghost" size="icon" className="h-8 w-8">
+                <Edit3 className="h-4 w-4 text-muted-foreground" />
+              </Button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 p-3 rounded-xl bg-muted border border-primary">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
+                <MapPin className="h-5 w-5 text-primary" />
+              </div>
+              <div className="flex-1">
+                <p className="text-xs text-muted-foreground mb-1">Enter your pickup location</p>
+                <Input
+                  placeholder="Search for a stage..."
+                  value={manualOrigin}
+                  onChange={(e) => {
+                    setManualOrigin(e.target.value)
+                    setShowOriginDropdown(true)
+                  }}
+                  onFocus={() => setShowOriginDropdown(true)}
+                  autoFocus
+                  className="border-0 p-0 h-7 text-base font-medium bg-transparent focus-visible:ring-0"
+                />
+              </div>
+              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleCancelEditOrigin}>
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
+
+          {/* Origin Autocomplete Dropdown */}
+          {showOriginDropdown && isEditingOrigin && filteredOriginStages.length > 0 && (
+            <div className="absolute left-0 right-0 top-full mt-1 z-[10000] rounded-xl border border-border bg-card shadow-2xl overflow-hidden max-h-60 overflow-y-auto">
+              {filteredOriginStages.map((stage) => (
+                <button
+                  key={stage.id}
+                  onClick={() => handleSelectOrigin(stage)}
+                  className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-muted transition-colors border-b border-border last:border-0"
+                >
+                  <MapPin className="h-4 w-4 text-primary" />
+                  <span className="font-medium">{stage.name}</span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Destination Input */}
         <div className="relative">
-          <div className="flex items-center gap-3 p-3 rounded-xl bg-muted border border-border focus-within:border-primary focus-within:ring-1 focus-within:ring-primary">
+          <div className="flex items-center gap-3 p-3 rounded-xl bg-muted border border-border focus-within:border-accent focus-within:ring-1 focus-within:ring-accent">
             <div className="flex h-10 w-10 items-center justify-center rounded-full bg-accent/10">
-              <Search className="h-5 w-5 text-accent" />
+              <Navigation className="h-5 w-5 text-accent" />
             </div>
             <div className="flex-1">
               <p className="text-xs text-muted-foreground">Where are you going?</p>
@@ -275,21 +405,28 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
                   setShowDestinationDropdown(true)
                 }}
                 onFocus={() => setShowDestinationDropdown(true)}
+                onBlur={() => setTimeout(() => setShowDestinationDropdown(false), 200)}
                 className="border-0 p-0 h-7 text-base font-medium bg-transparent focus-visible:ring-0 placeholder:text-muted-foreground/50"
               />
             </div>
+            {destination && (
+              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setDestination("")}>
+                <X className="h-4 w-4" />
+              </Button>
+            )}
           </div>
 
-          {/* Autocomplete Dropdown */}
-          {showDestinationDropdown && filteredStages.length > 0 && (
-            <div className="absolute left-0 right-0 top-full mt-1 z-50 rounded-xl border border-border bg-card shadow-lg overflow-hidden">
-              {filteredStages.map((stage) => (
+          {/* Destination Autocomplete Dropdown */}
+          {showDestinationDropdown && filteredDestinationStages.length > 0 && (
+            <div className="absolute left-0 right-0 top-full mt-1 z-[10000] rounded-xl border border-border bg-card shadow-2xl overflow-hidden max-h-60 overflow-y-auto">
+              {filteredDestinationStages.map((stage) => (
                 <button
                   key={stage.id}
+                  onMouseDown={(e) => e.preventDefault()} // Prevent blur
                   onClick={() => handleSelectDestination(stage)}
-                  className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-muted transition-colors"
+                  className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-muted transition-colors border-b border-border last:border-0"
                 >
-                  <MapPin className="h-4 w-4 text-muted-foreground" />
+                  <Navigation className="h-4 w-4 text-accent" />
                   <span className="font-medium">{stage.name}</span>
                 </button>
               ))}
@@ -304,7 +441,7 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
       {suggestedRoutes.length > 0 && (
         <div className="flex-shrink-0 border-b border-border bg-card/50 px-4 py-3">
           <p className="text-xs font-medium text-muted-foreground mb-2">
-            Available Routes ({suggestedRoutes.length})
+            🚌 {suggestedRoutes.length} Route{suggestedRoutes.length > 1 ? "s" : ""} Available
           </p>
           <ScrollArea className="w-full whitespace-nowrap">
             <div className="flex gap-2">
@@ -315,8 +452,8 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
                   className={cn(
                     "flex items-center gap-2 px-4 py-2.5 rounded-xl border transition-all",
                     selectedRouteId === route.id
-                      ? "bg-primary text-primary-foreground border-primary"
-                      : "bg-card border-border hover:border-primary/50"
+                      ? "bg-primary text-primary-foreground border-primary shadow-lg"
+                      : "bg-card border-border hover:border-primary/50 hover:shadow"
                   )}
                 >
                   <div
@@ -324,11 +461,13 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
                     style={{ backgroundColor: route.color }}
                   />
                   <span className="font-medium text-sm">{route.name}</span>
-                  <Badge variant="secondary" className="text-xs">
+                  <Badge
+                    variant={selectedRouteId === route.id ? "secondary" : "outline"}
+                    className="text-xs"
+                  >
                     <Bus className="h-3 w-3 mr-1" />
                     {route.vehicleCount}
                   </Badge>
-                  <ChevronRight className="h-4 w-4 opacity-50" />
                 </button>
               ))}
             </div>
@@ -337,18 +476,28 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
         </div>
       )}
 
+      {/* No routes found message */}
+      {originStage && destinationStage && suggestedRoutes.length === 0 && (
+        <div className="flex-shrink-0 px-4 py-4 bg-amber-500/10 border-b border-amber-500/20">
+          <div className="flex items-center gap-3 text-amber-700 dark:text-amber-400">
+            <Bus className="h-5 w-5" />
+            <p className="text-sm">No direct routes found between these locations</p>
+          </div>
+        </div>
+      )}
+
       {/* Show prompt if no destination yet */}
-      {!destinationStage && destination === "" && (
+      {!destinationStage && (
         <div className="flex-shrink-0 px-4 py-4 bg-muted/30 border-b border-border">
           <div className="flex items-center gap-3 text-muted-foreground">
-            <Navigation className="h-5 w-5" />
+            <Search className="h-5 w-5" />
             <p className="text-sm">Enter your destination to see available routes</p>
           </div>
         </div>
       )}
 
       {/* ═══════════════════════════════════════════════════════════════════
-          MAP SECTION - Takes remaining space, never overlapped
+          MAP SECTION - Takes remaining space
       ═══════════════════════════════════════════════════════════════════ */}
       <div className="flex-1 relative min-h-0">
         <Suspense
@@ -368,8 +517,8 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
             highlightActiveRoute={true}
             userLocation={userLocation}
             nearestStage={nearestStage}
-            showUserLocation={true}
-            showGuidancePath={!!nearestStage}
+            showUserLocation={!!userLocation}
+            showGuidancePath={!!nearestStage && !!userLocation}
             flyToLocation={flyToLocation}
           />
         </Suspense>
@@ -390,6 +539,14 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
             className="shadow-sm"
           >
             {isRealtime ? "🟢 Live" : "📡 Connecting..."}
+          </Badge>
+        </div>
+
+        {/* Vehicle Count on Map */}
+        <div className="absolute top-2 left-2 z-10">
+          <Badge variant="secondary" className="shadow-sm">
+            <Bus className="h-3 w-3 mr-1" />
+            {mapVehicles.length} vehicle{mapVehicles.length !== 1 ? "s" : ""}
           </Badge>
         </div>
       </div>
