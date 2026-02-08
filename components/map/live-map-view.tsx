@@ -8,6 +8,9 @@ import {
   Wifi,
   WifiOff,
   ChevronDown,
+  Navigation,
+  MapPin,
+  Clock,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -19,8 +22,10 @@ import { ApproachingVehicleBadge } from "@/components/passenger/approaching-vehi
 import { MapFAB } from "@/components/map/map-fab"
 import { VehicleSheet } from "@/components/map/vehicle-sheet"
 import { RouteBottomSheet } from "@/components/map/route-bottom-sheet"
+import { useUserLocation } from "@/hooks/use-user-location"
+import { findNearest, calculateDistance, estimateWalkingTime, getCardinalDirection, calculateBearing } from "@/lib/geo-utils"
 import { cn } from "@/lib/utils"
-import type { MapVehicle, MapRoute } from "@/components/map/leaflet-map"
+import type { MapVehicle, MapRoute, UserLocationData, NearestStageData, MapStage } from "@/components/map/leaflet-map"
 
 // Dynamic import for Leaflet (SSR-incompatible)
 const LeafletMap = dynamic(
@@ -51,6 +56,79 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
   const { positions: allPositions, isRealtime, connectionState } = useRealtimePositions()
   const { data: routesData } = useRoutes({ limit: 100 })
   const routes = routesData?.routes || []
+
+  // User location with watching enabled
+  const { location: userLocationRaw, isLoading: locationLoading, requestLocation } = useUserLocation({ watch: true })
+
+  // Convert raw location to UserLocationData format
+  const userLocation: UserLocationData | null = useMemo(() => {
+    if (!userLocationRaw) return null
+    return {
+      latitude: userLocationRaw.latitude,
+      longitude: userLocationRaw.longitude,
+      accuracy: userLocationRaw.accuracy,
+    }
+  }, [userLocationRaw])
+
+  // Get all stages from all routes for nearest stage calculation
+  const allStages: MapStage[] = useMemo(() => {
+    const stages: MapStage[] = []
+    routes.forEach(route => {
+      route.stages?.forEach(stage => {
+        stages.push({
+          id: stage.id,
+          name: stage.name,
+          lat: stage.latitude,
+          lng: stage.longitude,
+          isTerminal: stage.isTerminal || false,
+          order: stage.order,
+        })
+      })
+    })
+    return stages
+  }, [routes])
+
+  // Calculate nearest stage to user
+  const nearestStage: NearestStageData | null = useMemo(() => {
+    if (!userLocation || allStages.length === 0) return null
+
+    // Find nearest stage using existing geo-utils
+    const stagesWithCoords = allStages.map(s => ({
+      ...s,
+      latitude: s.lat,
+      longitude: s.lng,
+    }))
+
+    const nearest = findNearest(userLocation.latitude, userLocation.longitude, stagesWithCoords)
+    if (!nearest) return null
+
+    const distance = nearest.distance
+    const walkingTime = estimateWalkingTime(distance)
+    const bearing = calculateBearing(
+      userLocation.latitude,
+      userLocation.longitude,
+      nearest.location.latitude,
+      nearest.location.longitude
+    )
+    const direction = getCardinalDirection(bearing)
+
+    return {
+      stage: {
+        id: nearest.location.id,
+        name: nearest.location.name,
+        lat: nearest.location.latitude,
+        lng: nearest.location.longitude,
+        isTerminal: nearest.location.isTerminal,
+        order: nearest.location.order,
+      },
+      distance,
+      walkingTime,
+      direction,
+    }
+  }, [userLocation, allStages])
+
+  // Threshold for "near stage" detection (500m)
+  const NEAR_STAGE_THRESHOLD = 500
 
   // Filter vehicles by selected route
   const activeVehicles = useMemo(() => {
@@ -304,6 +382,36 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
           </div>
         )}
 
+        {/* Not Near Stage Guidance Banner */}
+        {userLocation && nearestStage && nearestStage.distance > NEAR_STAGE_THRESHOLD && (
+          <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[9998] w-[calc(100%-6rem)] max-w-md">
+            <div className="bg-blue-600/95 backdrop-blur-sm rounded-xl px-4 py-3 shadow-lg border border-blue-500/50">
+              <div className="flex items-center gap-3">
+                <div className="flex-shrink-0 p-2 bg-white/20 rounded-lg">
+                  <Navigation className="h-5 w-5 text-white" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-medium text-blue-100">Walk to nearest stage</p>
+                  <p className="text-sm font-bold text-white truncate">{nearestStage.stage.name}</p>
+                </div>
+                <div className="flex items-center gap-2 text-white">
+                  <div className="text-right">
+                    <div className="flex items-center gap-1 text-xs text-blue-100">
+                      <MapPin className="h-3 w-3" />
+                      <span>{Math.round(nearestStage.distance)}m</span>
+                    </div>
+                    <div className="flex items-center gap-1 text-xs text-blue-100">
+                      <Clock className="h-3 w-3" />
+                      <span>{nearestStage.walkingTime} min</span>
+                    </div>
+                  </div>
+                  <div className="text-lg font-bold">{nearestStage.direction}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Leaflet Map */}
         <Suspense
           fallback={
@@ -321,6 +429,10 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
             showRouteLines={true}
             enableAnimation={true}
             highlightActiveRoute={true}
+            userLocation={userLocation}
+            nearestStage={nearestStage && nearestStage.distance > NEAR_STAGE_THRESHOLD ? nearestStage : null}
+            showUserLocation={true}
+            showGuidancePath={nearestStage ? nearestStage.distance > NEAR_STAGE_THRESHOLD : false}
           />
         </Suspense>
 
@@ -384,14 +496,12 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
 // ─── Desktop Vehicle Panel (simplified) ─────────────────────────────
 import {
   Bus,
-  Navigation,
   Timer,
   X,
   Star,
   MessageSquare,
   Target,
   Route,
-  Clock,
 } from "lucide-react"
 import { Progress } from "@/components/ui/progress"
 import { VEHICLE_TYPE_LABELS } from "@/lib/constants"

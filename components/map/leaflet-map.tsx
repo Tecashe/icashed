@@ -49,6 +49,19 @@ export interface VehicleProgressOverlay {
   traveledPath: [number, number][] // Already traveled portion
 }
 
+export interface UserLocationData {
+  latitude: number
+  longitude: number
+  accuracy?: number
+}
+
+export interface NearestStageData {
+  stage: MapStage
+  distance: number // meters
+  walkingTime: number // minutes
+  direction: string // e.g. "NE"
+}
+
 interface LeafletMapProps {
   vehicles: MapVehicle[]
   routes?: MapRoute[]
@@ -64,6 +77,10 @@ interface LeafletMapProps {
   enableAnimation?: boolean
   highlightActiveRoute?: boolean
   vehicleProgress?: Map<string, VehicleProgressOverlay>
+  userLocation?: UserLocationData | null
+  nearestStage?: NearestStageData | null
+  showUserLocation?: boolean
+  showGuidancePath?: boolean
 }
 
 // ============================================================================
@@ -285,6 +302,10 @@ export function LeafletMap({
   enableAnimation = true,
   highlightActiveRoute = true,
   vehicleProgress,
+  userLocation,
+  nearestStage,
+  showUserLocation = true,
+  showGuidancePath = true,
 }: LeafletMapProps) {
   const mapRef = useRef<L.Map | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -295,6 +316,7 @@ export function LeafletMap({
   const routeLayersRef = useRef<L.LayerGroup | null>(null)
   const stageLayersRef = useRef<L.LayerGroup | null>(null)
   const progressLayersRef = useRef<L.LayerGroup | null>(null)
+  const userLocationLayerRef = useRef<L.LayerGroup | null>(null)
   const [mounted, setMounted] = useState(false)
 
   // Initialize map
@@ -487,6 +509,123 @@ export function LeafletMap({
       mapRef.current.fitBounds(bounds, { padding: [50, 50], animate: true })
     }
   }, [selectedRouteId, routes])
+
+  // ─── User Location Marker & Guidance Path ──────────────────────────
+  useEffect(() => {
+    if (!mapRef.current || !mounted) return
+
+    // Initialize layer if needed
+    if (!userLocationLayerRef.current) {
+      userLocationLayerRef.current = L.layerGroup().addTo(mapRef.current)
+    }
+
+    // Clear existing markers
+    userLocationLayerRef.current.clearLayers()
+
+    // Don't show if disabled or no location
+    if (!showUserLocation || !userLocation) return
+
+    // Create user location marker with pulsing blue dot
+    const userIcon = L.divIcon({
+      html: `
+        <div class="user-location-marker">
+          <div class="user-pulse"></div>
+          <div class="user-dot"></div>
+        </div>
+      `,
+      className: "user-location-icon",
+      iconSize: [24, 24],
+      iconAnchor: [12, 12],
+    })
+
+    const userMarker = L.marker([userLocation.latitude, userLocation.longitude], {
+      icon: userIcon,
+      zIndexOffset: 2000,
+    })
+    userMarker.addTo(userLocationLayerRef.current)
+
+    // Add accuracy circle if available
+    if (userLocation.accuracy && userLocation.accuracy > 0) {
+      const accuracyCircle = L.circle([userLocation.latitude, userLocation.longitude], {
+        radius: userLocation.accuracy,
+        color: "#3B82F6",
+        fillColor: "#3B82F6",
+        fillOpacity: 0.1,
+        weight: 1,
+        opacity: 0.3,
+      })
+      accuracyCircle.addTo(userLocationLayerRef.current)
+    }
+
+    // ─── Dotted Path to Nearest Stage ───────────────────────────────
+    if (showGuidancePath && nearestStage) {
+      // Create dotted polyline from user to nearest stage
+      const pathCoords: [number, number][] = [
+        [userLocation.latitude, userLocation.longitude],
+        [nearestStage.stage.lat, nearestStage.stage.lng],
+      ]
+
+      const guidancePath = L.polyline(pathCoords, {
+        color: "#3B82F6",
+        weight: 4,
+        opacity: 0.8,
+        dashArray: "10, 15",
+        lineCap: "round",
+        lineJoin: "round",
+      })
+      guidancePath.addTo(userLocationLayerRef.current)
+
+      // Add walking dots along the path (animated feel)
+      const numDots = 5
+      for (let i = 1; i < numDots; i++) {
+        const t = i / numDots
+        const dotLat = userLocation.latitude + t * (nearestStage.stage.lat - userLocation.latitude)
+        const dotLng = userLocation.longitude + t * (nearestStage.stage.lng - userLocation.longitude)
+
+        const dotIcon = L.divIcon({
+          html: `<div class="walking-dot" style="animation-delay: ${i * 0.2}s"></div>`,
+          className: "walking-dot-container",
+          iconSize: [8, 8],
+          iconAnchor: [4, 4],
+        })
+
+        L.marker([dotLat, dotLng], { icon: dotIcon, interactive: false })
+          .addTo(userLocationLayerRef.current)
+      }
+
+      // Add info popup on the stage
+      const stageInfoHtml = `
+        <div class="nearest-stage-popup">
+          <strong>${nearestStage.stage.name}</strong>
+          <div class="popup-info">
+            <span>📍 ${Math.round(nearestStage.distance)}m</span>
+            <span>🚶 ${nearestStage.walkingTime} min</span>
+            <span>🧭 ${nearestStage.direction}</span>
+          </div>
+        </div>
+      `
+
+      // Highlight the nearest stage marker
+      const nearestStageIcon = L.divIcon({
+        html: `
+          <div class="nearest-stage-marker">
+            <div class="stage-pulse"></div>
+            <div class="stage-center">📍</div>
+          </div>
+        `,
+        className: "nearest-stage-icon",
+        iconSize: [32, 32],
+        iconAnchor: [16, 16],
+      })
+
+      const nearestMarker = L.marker([nearestStage.stage.lat, nearestStage.stage.lng], {
+        icon: nearestStageIcon,
+        zIndexOffset: 1500,
+      })
+      nearestMarker.bindPopup(stageInfoHtml, { className: "nearest-stage-tip" })
+      nearestMarker.addTo(userLocationLayerRef.current)
+    }
+  }, [mounted, userLocation, nearestStage, showUserLocation, showGuidancePath])
 
   return (
     <>
@@ -717,6 +856,146 @@ export function LeafletMap({
           color: hsl(220, 10%, 50%);
         }
         
+        /* ─── User Location Marker ────────────────────────────────── */
+        .user-location-icon {
+          background: none !important;
+          border: none !important;
+        }
+        
+        .user-location-marker {
+          position: relative;
+          width: 24px;
+          height: 24px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        
+        .user-pulse {
+          position: absolute;
+          width: 40px;
+          height: 40px;
+          border-radius: 50%;
+          background: rgba(59, 130, 246, 0.3);
+          animation: user-pulse-anim 2s ease-out infinite;
+        }
+        
+        .user-dot {
+          position: relative;
+          width: 16px;
+          height: 16px;
+          background: #3B82F6;
+          border: 3px solid white;
+          border-radius: 50%;
+          box-shadow: 0 2px 8px rgba(59, 130, 246, 0.5);
+        }
+        
+        @keyframes user-pulse-anim {
+          0% {
+            transform: scale(0.5);
+            opacity: 1;
+          }
+          100% {
+            transform: scale(2);
+            opacity: 0;
+          }
+        }
+        
+        /* ─── Walking Dots Animation ───────────────────────────────── */
+        .walking-dot-container {
+          background: none !important;
+          border: none !important;
+        }
+        
+        .walking-dot {
+          width: 8px;
+          height: 8px;
+          background: #3B82F6;
+          border-radius: 50%;
+          animation: walking-bounce 1s ease-in-out infinite;
+          box-shadow: 0 2px 4px rgba(59, 130, 246, 0.4);
+        }
+        
+        @keyframes walking-bounce {
+          0%, 100% {
+            opacity: 0.4;
+            transform: scale(0.8);
+          }
+          50% {
+            opacity: 1;
+            transform: scale(1.2);
+          }
+        }
+        
+        /* ─── Nearest Stage Marker ─────────────────────────────────── */
+        .nearest-stage-icon {
+          background: none !important;
+          border: none !important;
+        }
+        
+        .nearest-stage-marker {
+          position: relative;
+          width: 32px;
+          height: 32px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        
+        .stage-pulse {
+          position: absolute;
+          width: 48px;
+          height: 48px;
+          border-radius: 50%;
+          border: 3px solid #10B981;
+          animation: stage-pulse-anim 1.5s ease-out infinite;
+        }
+        
+        .stage-center {
+          position: relative;
+          font-size: 20px;
+          text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+        }
+        
+        @keyframes stage-pulse-anim {
+          0% {
+            transform: scale(0.8);
+            opacity: 1;
+          }
+          100% {
+            transform: scale(1.5);
+            opacity: 0;
+          }
+        }
+        
+        .nearest-stage-popup {
+          padding: 8px 12px;
+        }
+        
+        .nearest-stage-popup strong {
+          display: block;
+          font-size: 14px;
+          margin-bottom: 6px;
+          color: hsl(0, 0%, 95%);
+        }
+        
+        .popup-info {
+          display: flex;
+          gap: 8px;
+          font-size: 11px;
+          color: hsl(0, 0%, 70%);
+        }
+        
+        .nearest-stage-tip .leaflet-popup-content-wrapper {
+          background: hsl(220, 18%, 12%);
+          border-radius: 12px;
+          color: white;
+        }
+        
+        .nearest-stage-tip .leaflet-popup-tip {
+          background: hsl(220, 18%, 12%);
+        }
+
         /* ─── Map Container ───────────────────────────────────────── */
         .leaflet-container {
           background: hsl(220, 20%, 7%) !important;
