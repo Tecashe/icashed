@@ -7,10 +7,11 @@ import { useMyVehicles, useRoutes } from "@/hooks/use-data"
 import { useVehicleProgress, type RouteWithStages } from "@/hooks/use-vehicle-progress"
 import useSWR from "swr"
 import { apiPost, fetcher } from "@/lib/api-client"
-import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
+import { Label } from "@/components/ui/label"
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import {
   Select,
   SelectContent,
@@ -26,14 +27,11 @@ import {
   Bus,
   Gauge,
   Users,
-  ChevronUp,
-  ChevronDown,
   ArrowRight,
-  Timer,
-  Target,
   Navigation,
   Route,
-  CheckCircle2,
+  Crosshair,
+  Radio,
   CircleDot,
 } from "lucide-react"
 import type { MapVehicle, MapRoute } from "@/components/map/leaflet-map"
@@ -66,8 +64,12 @@ export default function DriverTrackingPage() {
   const { data: routesData } = useRoutes({ limit: 100 })
   const routes = routesData?.routes || []
 
+  // Selection state
   const [selectedVehicleId, setSelectedVehicleId] = useState<string>("")
   const [selectedRouteId, setSelectedRouteId] = useState<string>("")
+  const [direction, setDirection] = useState<"forward" | "reverse">("forward")
+
+  // Tracking state
   const [tracking, setTracking] = useState(false)
   const [position, setPosition] = useState<{
     lat: number
@@ -76,9 +78,8 @@ export default function DriverTrackingPage() {
     heading: number
     accuracy: number
   } | null>(null)
-  const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
   const [updateCount, setUpdateCount] = useState(0)
-  const [showPanel, setShowPanel] = useState(true)
+  const [flyToLocation, setFlyToLocation] = useState<{ lat: number; lng: number; zoom?: number } | null>(null)
   const watchRef = useRef<number | null>(null)
 
   // Get waiting passengers for driver's routes
@@ -124,6 +125,18 @@ export default function DriverTrackingPage() {
     return vehicleRoutes.find(r => r.id === selectedRouteId) || vehicleRoutes[0]
   }, [selectedRouteId, vehicleRoutes])
 
+  // Get route direction labels (terminals)
+  const routeTerminals = useMemo(() => {
+    if (!selectedRoute || selectedRoute.stages.length < 2) return null
+    const stages = [...selectedRoute.stages].sort((a, b) => (a.order || 0) - (b.order || 0))
+    const firstStage = stages[0]
+    const lastStage = stages[stages.length - 1]
+    return {
+      forward: { from: firstStage.name, to: lastStage.name },
+      reverse: { from: lastStage.name, to: firstStage.name },
+    }
+  }, [selectedRoute])
+
   // Calculate progress along route
   const currentPosition = position ? { latitude: position.lat, longitude: position.lng } : null
   const routesForProgress = selectedRoute ? [selectedRoute] : []
@@ -149,7 +162,7 @@ export default function DriverTrackingPage() {
 
   const sendPosition = useCallback(
     async (pos: GeolocationPosition) => {
-      if (!selectedVehicleId) return
+      if (!selectedVehicleId || !selectedRouteId) return
       const { latitude, longitude, speed, heading, accuracy } = pos.coords
       const spd = speed ? Math.round(speed * 3.6) : 0
       const hdg = heading ?? 0
@@ -159,23 +172,28 @@ export default function DriverTrackingPage() {
       try {
         await apiPost("/api/driver/position", {
           vehicleId: selectedVehicleId,
+          routeId: selectedRouteId,
+          direction,
           latitude,
           longitude,
           speed: spd,
           heading: Math.round(hdg),
         })
-        setLastUpdate(new Date())
         setUpdateCount((c) => c + 1)
       } catch {
         // Silent retry next tick
       }
     },
-    [selectedVehicleId]
+    [selectedVehicleId, selectedRouteId, direction]
   )
 
   const startTracking = useCallback(() => {
     if (!selectedVehicleId) {
       toast.error("Select a vehicle first")
+      return
+    }
+    if (!selectedRouteId) {
+      toast.error("Select a route first")
       return
     }
     if (!navigator.geolocation) {
@@ -186,9 +204,13 @@ export default function DriverTrackingPage() {
     setTracking(true)
     setUpdateCount(0)
 
-    const selectedVehicle = vehicles.find((v) => v.id === selectedVehicleId)
-    toast.success("You're now LIVE!", {
-      description: `Passengers can see ${selectedVehicle?.plateNumber}`,
+    const vehicle = vehicles.find((v) => v.id === selectedVehicleId)
+    const directionLabel = routeTerminals
+      ? `${direction === "forward" ? routeTerminals.forward.from : routeTerminals.reverse.from} → ${direction === "forward" ? routeTerminals.forward.to : routeTerminals.reverse.to}`
+      : ""
+
+    toast.success("You're now LIVE! 🟢", {
+      description: `${vehicle?.plateNumber} heading ${directionLabel}`,
     })
 
     watchRef.current = navigator.geolocation.watchPosition(
@@ -198,7 +220,7 @@ export default function DriverTrackingPage() {
       },
       { enableHighAccuracy: true, maximumAge: 5000, timeout: 30000 }
     )
-  }, [selectedVehicleId, vehicles, sendPosition])
+  }, [selectedVehicleId, selectedRouteId, direction, vehicles, routeTerminals, sendPosition])
 
   const stopTracking = useCallback(() => {
     if (watchRef.current !== null) {
@@ -206,7 +228,7 @@ export default function DriverTrackingPage() {
       watchRef.current = null
     }
     setTracking(false)
-    toast.info("Tracking stopped", { description: `${updateCount} updates sent` })
+    toast.info("Tracking stopped", { description: `${updateCount} location updates sent` })
   }, [updateCount])
 
   useEffect(() => {
@@ -216,6 +238,12 @@ export default function DriverTrackingPage() {
       }
     }
   }, [])
+
+  const handleCenterOnMe = () => {
+    if (position) {
+      setFlyToLocation({ lat: position.lat, lng: position.lng, zoom: 16 })
+    }
+  }
 
   // Map data
   const mapVehicles: MapVehicle[] = position
@@ -255,10 +283,229 @@ export default function DriverTrackingPage() {
     })),
   }] : []
 
+  // Validation for Go Live
+  const canGoLive = selectedVehicleId && selectedRouteId && routeTerminals
+
   return (
-    <div className="relative -m-4 -mb-24 flex h-[calc(100vh-4rem)] flex-col lg:-m-6 lg:-mb-6 lg:h-[calc(100vh-4rem)]">
-      {/* Full-screen Map */}
-      <div className="absolute inset-0">
+    <div className="flex flex-col h-[calc(100vh-4rem)] bg-background">
+      {/* ═══════════════════════════════════════════════════════════════════
+          CONTROL SECTION - Fixed at top
+      ═══════════════════════════════════════════════════════════════════ */}
+      {!tracking ? (
+        <div className="flex-shrink-0 border-b border-border bg-card px-4 py-4 space-y-4">
+
+          {/* Vehicle Selector */}
+          <div>
+            <Label className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-2">
+              <Bus className="h-4 w-4" />
+              Select Your Vehicle
+            </Label>
+            <Select
+              value={selectedVehicleId}
+              onValueChange={(v) => {
+                setSelectedVehicleId(v)
+                setSelectedRouteId("") // Reset route when vehicle changes
+              }}
+            >
+              <SelectTrigger className="h-12 text-base">
+                <SelectValue placeholder="Choose a vehicle..." />
+              </SelectTrigger>
+              <SelectContent>
+                {vehicles.map((v) => (
+                  <SelectItem key={v.id} value={v.id} className="py-3">
+                    <div className="flex items-center gap-2">
+                      <Bus className="h-4 w-4" />
+                      <span className="font-semibold">{v.plateNumber}</span>
+                      {v.nickname && (
+                        <span className="text-muted-foreground">({v.nickname})</span>
+                      )}
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Route Selector */}
+          {vehicleRoutes.length > 0 && (
+            <div>
+              <Label className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-2">
+                <Route className="h-4 w-4" />
+                Select Route
+              </Label>
+              <Select
+                value={selectedRouteId}
+                onValueChange={setSelectedRouteId}
+              >
+                <SelectTrigger className="h-12 text-base">
+                  <SelectValue placeholder="Choose a route..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {vehicleRoutes.map((r) => (
+                    <SelectItem key={r.id} value={r.id} className="py-3">
+                      <div className="flex items-center gap-2">
+                        <div
+                          className="h-3 w-3 rounded-full"
+                          style={{ backgroundColor: r.color }}
+                        />
+                        <span className="font-medium">{r.name}</span>
+                        <span className="text-xs text-muted-foreground">
+                          ({r.stages.length} stops)
+                        </span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {/* Direction Selector */}
+          {routeTerminals && (
+            <div className="rounded-xl border border-border bg-muted/30 p-4">
+              <Label className="text-xs font-medium text-muted-foreground mb-3 flex items-center gap-2">
+                <Navigation className="h-4 w-4" />
+                Which direction are you heading?
+              </Label>
+              <RadioGroup
+                value={direction}
+                onValueChange={(v) => setDirection(v as "forward" | "reverse")}
+                className="space-y-3"
+              >
+                <div className="flex items-center space-x-3">
+                  <RadioGroupItem value="forward" id="forward" />
+                  <Label
+                    htmlFor="forward"
+                    className="flex-1 flex items-center gap-2 cursor-pointer text-base"
+                  >
+                    <span className="font-medium">{routeTerminals.forward.from}</span>
+                    <ArrowRight className="h-4 w-4 text-primary" />
+                    <span className="font-medium">{routeTerminals.forward.to}</span>
+                  </Label>
+                </div>
+                <div className="flex items-center space-x-3">
+                  <RadioGroupItem value="reverse" id="reverse" />
+                  <Label
+                    htmlFor="reverse"
+                    className="flex-1 flex items-center gap-2 cursor-pointer text-base"
+                  >
+                    <span className="font-medium">{routeTerminals.reverse.from}</span>
+                    <ArrowRight className="h-4 w-4 text-primary" />
+                    <span className="font-medium">{routeTerminals.reverse.to}</span>
+                  </Label>
+                </div>
+              </RadioGroup>
+            </div>
+          )}
+
+          {/* GO LIVE Button */}
+          <Button
+            onClick={startTracking}
+            disabled={!canGoLive}
+            size="lg"
+            className="w-full h-14 text-lg font-bold shadow-lg shadow-primary/25 gap-3"
+          >
+            <Power className="h-6 w-6" />
+            GO LIVE
+          </Button>
+
+          {!canGoLive && (
+            <p className="text-center text-sm text-muted-foreground">
+              {!selectedVehicleId && "Select a vehicle to continue"}
+              {selectedVehicleId && !selectedRouteId && "Select a route to continue"}
+              {selectedVehicleId && selectedRouteId && !routeTerminals && "Loading route details..."}
+            </p>
+          )}
+        </div>
+      ) : (
+        /* ═══════════════════════════════════════════════════════════════════
+           LIVE STATUS - Shows when tracking
+        ═══════════════════════════════════════════════════════════════════ */
+        <div className="flex-shrink-0 border-b border-border bg-gradient-to-r from-primary/10 to-accent/10 px-4 py-4">
+          {/* Live Indicator */}
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-3">
+              <div className="relative">
+                <Radio className="h-6 w-6 text-primary" />
+                <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
+                  <span className="relative inline-flex h-3 w-3 rounded-full bg-primary" />
+                </span>
+              </div>
+              <div>
+                <p className="font-bold text-primary">LIVE</p>
+                <p className="text-sm text-muted-foreground">
+                  {selectedVehicle?.plateNumber}
+                </p>
+              </div>
+            </div>
+            <Badge variant="secondary" className="text-sm">
+              {updateCount} updates
+            </Badge>
+          </div>
+
+          {/* Route & Direction */}
+          <div className="flex items-center gap-2 mb-3 text-sm">
+            <div
+              className="h-3 w-3 rounded-full"
+              style={{ backgroundColor: selectedRoute?.color }}
+            />
+            <span className="font-medium">{selectedRoute?.name}</span>
+            <ArrowRight className="h-4 w-4 text-muted-foreground" />
+            <span className="text-muted-foreground">
+              {routeTerminals && (direction === "forward"
+                ? routeTerminals.forward.to
+                : routeTerminals.reverse.to)}
+            </span>
+          </div>
+
+          {/* Speed & Progress Row */}
+          {position && (
+            <div className="flex items-center gap-4 mb-4">
+              <div className="flex items-center gap-2 rounded-lg bg-card px-3 py-2">
+                <Gauge className="h-5 w-5 text-primary" />
+                <span className="text-xl font-bold">{position.speed}</span>
+                <span className="text-sm text-muted-foreground">km/h</span>
+              </div>
+              {progress && (
+                <div className="flex-1">
+                  <div className="flex justify-between text-xs text-muted-foreground mb-1">
+                    <span>Progress</span>
+                    <span>{Math.round(progress.progress)}%</span>
+                  </div>
+                  <Progress value={progress.progress} className="h-2" />
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Waiting Passengers */}
+          {totalWaiting > 0 && (
+            <div className="flex items-center gap-2 rounded-lg bg-amber-500/10 border border-amber-500/30 px-3 py-2 mb-4">
+              <Users className="h-5 w-5 text-amber-600" />
+              <span className="text-sm font-medium text-amber-700 dark:text-amber-400">
+                {totalWaiting} passengers waiting along your route
+              </span>
+            </div>
+          )}
+
+          {/* STOP Button */}
+          <Button
+            onClick={stopTracking}
+            variant="destructive"
+            size="lg"
+            className="w-full h-12 text-base font-bold gap-2"
+          >
+            <PowerOff className="h-5 w-5" />
+            STOP TRACKING
+          </Button>
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════════════════════════════════════
+          MAP SECTION - Takes remaining space
+      ═══════════════════════════════════════════════════════════════════ */}
+      <div className="flex-1 relative min-h-0">
         <LeafletMap
           vehicles={mapVehicles}
           routes={mapRoutes}
@@ -267,283 +514,26 @@ export default function DriverTrackingPage() {
           showRouteLines={true}
           enableAnimation={true}
           highlightActiveRoute={true}
+          flyToLocation={flyToLocation}
         />
-      </div>
 
-      {/* Floating Status Badges (when tracking) */}
-      {tracking && (
-        <>
-          {/* LIVE Badge */}
-          <div className="absolute left-4 top-4 z-20">
-            <Badge className="gap-2 bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground shadow-lg">
-              <span className="relative flex h-2 w-2">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary-foreground opacity-75" />
-                <span className="relative inline-flex h-2 w-2 rounded-full bg-primary-foreground" />
-              </span>
-              LIVE
-            </Badge>
-          </div>
-
-          {/* Speed & Route Progress */}
-          {position && (
-            <div className="absolute right-4 top-4 z-20 flex flex-col gap-2">
-              {/* Speed */}
-              <div className="flex items-center gap-2 rounded-xl bg-card/95 px-3 py-2 shadow-lg backdrop-blur-sm">
-                <Gauge className="h-5 w-5 text-primary" />
-                <span className="text-xl font-bold text-foreground">{position.speed}</span>
-                <span className="text-sm text-muted-foreground">km/h</span>
-              </div>
-
-              {/* Route Progress */}
-              {progress && (
-                <div className="rounded-xl bg-card/95 px-3 py-2 shadow-lg backdrop-blur-sm">
-                  <div className="flex items-center justify-between gap-4 text-xs">
-                    <span className="text-muted-foreground">Progress</span>
-                    <span className="font-bold" style={{ color: progress.routeColor }}>
-                      {Math.round(progress.progress)}%
-                    </span>
-                  </div>
-                  <Progress value={progress.progress} className="mt-1 h-1.5" />
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Waiting Passengers Badge */}
-          {totalWaiting > 0 && (
-            <div className="absolute left-4 top-14 z-20">
-              <div className="flex items-center gap-2 rounded-xl bg-amber-500/90 px-3 py-2 shadow-lg">
-                <Users className="h-5 w-5 text-white" />
-                <span className="text-sm font-semibold text-white">
-                  {totalWaiting} waiting
-                </span>
-              </div>
-            </div>
-          )}
-
-          {/* Next Stage Card */}
-          {progress?.nextStage && (
-            <div className="absolute left-4 right-4 top-24 z-20 sm:left-auto sm:right-4 sm:w-64">
-              <div className="rounded-xl border border-border bg-card/95 p-3 shadow-lg backdrop-blur-sm">
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <Target className="h-3.5 w-3.5 text-accent" />
-                  Next Stop
-                </div>
-                <div className="mt-1 flex items-center justify-between">
-                  <span className="font-semibold text-foreground truncate">
-                    {progress.nextStage.name}
-                  </span>
-                  <Badge variant="secondary" className="text-xs gap-1">
-                    <Timer className="h-3 w-3" />
-                    {progress.etaToNextStage} min
-                  </Badge>
-                </div>
-                <div className="mt-1 text-xs text-muted-foreground">
-                  {progress.distanceToNextStage.toFixed(1)} km • {progress.stagesRemaining} stops to terminus
-                </div>
-              </div>
-            </div>
-          )}
-        </>
-      )}
-
-      {/* Bottom Control Panel */}
-      <div
-        className={cn(
-          "absolute bottom-0 left-0 right-0 z-20 transition-transform duration-300",
-          "pb-[calc(60px+env(safe-area-inset-bottom))] lg:pb-0",
-          !showPanel && !tracking && "translate-y-[calc(100%-60px)]"
-        )}
-      >
-        {/* Toggle Panel Button */}
-        {!tracking && (
-          <button
-            onClick={() => setShowPanel(!showPanel)}
-            className="absolute -top-4 left-1/2 z-10 flex h-8 w-16 -translate-x-1/2 items-center justify-center rounded-full bg-card shadow-lg border border-border"
+        {/* Center on Me FAB */}
+        {tracking && position && (
+          <Button
+            onClick={handleCenterOnMe}
+            size="icon"
+            className="absolute bottom-4 right-4 h-12 w-12 rounded-full shadow-lg z-10"
           >
-            {showPanel ? (
-              <ChevronDown className="h-5 w-5 text-muted-foreground" />
-            ) : (
-              <ChevronUp className="h-5 w-5 text-muted-foreground" />
-            )}
-          </button>
+            <Crosshair className="h-5 w-5" />
+          </Button>
         )}
 
-        <div className="rounded-t-3xl border-t border-border bg-card/95 p-4 shadow-2xl backdrop-blur-lg">
-          {/* Vehicle & Route Selector - Only when not tracking */}
-          {!tracking && (
-            <div className="mb-4 grid gap-3 sm:grid-cols-2">
-              {/* Vehicle Selector */}
-              <div>
-                <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-                  Select Vehicle
-                </label>
-                <Select
-                  value={selectedVehicleId}
-                  onValueChange={(v) => {
-                    setSelectedVehicleId(v)
-                    setSelectedRouteId("") // Reset route when vehicle changes
-                  }}
-                >
-                  <SelectTrigger className="h-12">
-                    <SelectValue placeholder="Choose your vehicle..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {vehicles.map((v) => (
-                      <SelectItem key={v.id} value={v.id} className="py-2.5">
-                        <div className="flex items-center gap-2">
-                          <Bus className="h-4 w-4" />
-                          <span className="font-medium">{v.plateNumber}</span>
-                          {v.nickname && (
-                            <span className="text-muted-foreground">- {v.nickname}</span>
-                          )}
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Route Selector */}
-              <div>
-                <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-                  Select Route
-                </label>
-                <Select
-                  value={selectedRouteId}
-                  onValueChange={setSelectedRouteId}
-                  disabled={vehicleRoutes.length === 0}
-                >
-                  <SelectTrigger className="h-12">
-                    <SelectValue placeholder="Choose your route..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {vehicleRoutes.map((r) => (
-                      <SelectItem key={r.id} value={r.id} className="py-2.5">
-                        <div className="flex items-center gap-2">
-                          <div
-                            className="h-3 w-3 rounded-full"
-                            style={{ backgroundColor: r.color }}
-                          />
-                          <span className="font-medium">{r.name}</span>
-                          <span className="text-xs text-muted-foreground">
-                            ({r.stages.length} stops)
-                          </span>
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          )}
-
-          {/* Status when tracking */}
-          {tracking && (
-            <div className="mb-4">
-              {/* Route Info */}
-              <div className="flex items-center justify-between rounded-xl border border-primary/30 bg-primary/5 p-3">
-                <div className="flex items-center gap-3">
-                  <span className="relative flex h-4 w-4">
-                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
-                    <span className="relative inline-flex h-4 w-4 rounded-full bg-primary" />
-                  </span>
-                  <div>
-                    <p className="font-semibold text-primary">Broadcasting LIVE</p>
-                    <p className="text-sm text-muted-foreground">
-                      {selectedVehicle?.plateNumber} • {selectedRoute?.name}
-                    </p>
-                  </div>
-                </div>
-                <Badge variant="secondary" className="text-sm">
-                  {updateCount} updates
-                </Badge>
-              </div>
-
-              {/* Stage Timeline (compact) */}
-              {selectedRoute && progress && (
-                <div className="mt-3 flex items-center gap-2 overflow-x-auto pb-2">
-                  {selectedRoute.stages.slice(0, 6).map((stage, index) => {
-                    const isPassed = index <= progress.currentStageIndex
-                    const isCurrent = index === progress.currentStageIndex
-                    const isNext = index === progress.currentStageIndex + 1
-
-                    return (
-                      <div
-                        key={stage.id}
-                        className={cn(
-                          "flex flex-shrink-0 items-center gap-1.5 rounded-lg px-2 py-1",
-                          isCurrent && "bg-primary/10",
-                          isNext && "bg-accent/10"
-                        )}
-                      >
-                        {isPassed ? (
-                          <CheckCircle2
-                            className="h-3.5 w-3.5"
-                            style={{ color: progress.routeColor }}
-                          />
-                        ) : isNext ? (
-                          <Target className="h-3.5 w-3.5 text-accent" />
-                        ) : (
-                          <CircleDot className="h-3.5 w-3.5 text-muted-foreground/40" />
-                        )}
-                        <span
-                          className={cn(
-                            "text-xs whitespace-nowrap",
-                            isPassed ? "text-foreground" : "text-muted-foreground",
-                            isCurrent && "font-semibold text-primary",
-                            isNext && "font-medium text-accent"
-                          )}
-                        >
-                          {stage.name.length > 12 ? stage.name.slice(0, 12) + "..." : stage.name}
-                        </span>
-                        {index < selectedRoute.stages.length - 1 && index < 5 && (
-                          <ArrowRight className="h-3 w-3 text-muted-foreground/40" />
-                        )}
-                      </div>
-                    )
-                  })}
-                  {selectedRoute.stages.length > 6 && (
-                    <span className="text-xs text-muted-foreground">
-                      +{selectedRoute.stages.length - 6} more
-                    </span>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* BIG START/STOP BUTTON */}
-          <div className="flex justify-center">
-            {tracking ? (
-              <Button
-                onClick={stopTracking}
-                size="lg"
-                variant="destructive"
-                className="h-16 w-full gap-3 text-lg font-bold shadow-lg shadow-destructive/25 sm:w-auto sm:px-12"
-              >
-                <PowerOff className="h-6 w-6" />
-                STOP TRACKING
-              </Button>
-            ) : (
-              <Button
-                onClick={startTracking}
-                disabled={!selectedVehicleId}
-                size="lg"
-                className="h-16 w-full gap-3 text-lg font-bold shadow-lg shadow-primary/25 hover:shadow-xl sm:w-auto sm:px-12"
-              >
-                <Power className="h-6 w-6" />
-                GO LIVE
-              </Button>
-            )}
-          </div>
-
-          {/* Empty State Hint */}
-          {!tracking && !selectedVehicleId && (
-            <p className="mt-3 text-center text-sm text-muted-foreground">
-              Select a vehicle above to start tracking
-            </p>
-          )}
+        {/* Vehicle count badge */}
+        <div className="absolute top-2 left-2 z-10">
+          <Badge variant="secondary" className="shadow-sm">
+            <MapPin className="h-3 w-3 mr-1" />
+            {tracking ? "Tracking Active" : "Preview"}
+          </Badge>
         </div>
       </div>
     </div>
