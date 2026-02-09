@@ -1,19 +1,12 @@
 "use client"
 
-import { LiveMapView } from "@/components/map/live-map-view"
+import { LiveMapView } from "@/components/map/google-live-map-view"
 
 export default function PassengerMapPage() {
   return (
-    <div className="-m-4 lg:-m-6 h-[calc(100vh-64px)]"> {/* Add explicit height */}
+    <div className="-m-4 lg:-m-6 h-[calc(100vh-64px)]">
       <LiveMapView />
     </div>
   )
 }
 
-// export default function PassengerMapPage() {
-//   return (
-//     <div className="-m-4 lg:-m-6">
-//       <LiveMapView />
-//     </div>
-//   )
-// }
