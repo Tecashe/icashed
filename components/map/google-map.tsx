@@ -330,11 +330,14 @@ export function GoogleMap({
 
                 const styles = mapStyle === "dark" ? DARK_MAP_STYLE : mapStyle === "light" ? LIGHT_MAP_STYLE : []
 
+                // NOTE: When using mapId (required for AdvancedMarkerElement),
+                // we cannot use the 'styles' property. Styling must be done in Cloud Console.
+                // styles, 
                 const map = new google.maps.Map(mapRef.current, {
                     center,
                     zoom,
-                    mapId: "premium_transport_map",
-                    styles,
+                    mapId: "premium_transport_map", // Required for Advanced Markers
+                    // styles, // Conflicting property removed
                     disableDefaultUI: true,
                     zoomControl: false,
                     mapTypeControl: false,
@@ -406,7 +409,13 @@ export function GoogleMap({
         routePolylinesRef.current = []
 
         // Clear existing stage markers
-        stageMarkersRef.current.forEach((m) => (m.map = null))
+        stageMarkersRef.current.forEach((m) => {
+            try {
+                m.map = null
+            } catch (e) {
+                console.warn("Error removing stage marker:", e)
+            }
+        })
         stageMarkersRef.current = []
 
         routes.forEach((route) => {
@@ -466,7 +475,7 @@ export function GoogleMap({
                         title: stage.name,
                     })
 
-                    marker.addListener("click", () => {
+                    marker.addListener("gmp-click", () => {
                         if (infoWindowRef.current) {
                             infoWindowRef.current.setContent(`
                 <div style="padding: 8px; font-family: system-ui;">
@@ -494,7 +503,11 @@ export function GoogleMap({
         // Remove markers for vehicles no longer present
         vehicleMarkersRef.current.forEach((marker, id) => {
             if (!currentIds.has(id)) {
-                marker.map = null
+                try {
+                    marker.map = null
+                } catch (e) {
+                    console.warn("Error removing marker:", e)
+                }
                 vehicleMarkersRef.current.delete(id)
                 vehiclePositionsRef.current.delete(id)
             }
@@ -527,7 +540,7 @@ export function GoogleMap({
                     zIndex: 1000,
                 })
 
-                marker.addListener("click", () => {
+                marker.addListener("gmp-click", () => {
                     const distanceText = vehicle.distanceFromUser !== undefined
                         ? vehicle.distanceFromUser < 1000
                             ? `${Math.round(vehicle.distanceFromUser)}m away`
@@ -571,7 +584,13 @@ export function GoogleMap({
         if (!mapInstanceRef.current || !isLoaded) return
 
         // Clear existing
-        userLocationMarkerRef.current && (userLocationMarkerRef.current.map = null)
+        if (userLocationMarkerRef.current) {
+            try {
+                userLocationMarkerRef.current.map = null
+            } catch (e) {
+                console.warn("Error removing user marker:", e)
+            }
+        }
         accuracyCircleRef.current?.setMap(null)
         distanceRingsRef.current.forEach((r) => r.setMap(null))
         distanceRingsRef.current = []
