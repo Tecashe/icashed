@@ -71,7 +71,9 @@ export async function getRouteDirections(
     if (stages.length < 2) return null
 
     try {
+        console.log(`[Directions] Fetching road path for route ${routeId} with ${stages.length} stages...`)
         const directionsService = new google.maps.DirectionsService()
+        console.log(`[Directions] DirectionsService created successfully`)
 
         const allPath: google.maps.LatLng[] = []
         const allLegs: DirectionsResult["legs"] = []
@@ -82,11 +84,13 @@ export async function getRouteDirections(
             const to = stages[i + 1]
 
             try {
+                console.log(`[Directions] Requesting segment ${i + 1}/${stages.length - 1}: ${from.name || 'unknown'} → ${to.name || 'unknown'}`)
                 const result = await directionsService.route({
                     origin: new google.maps.LatLng(from.lat, from.lng),
                     destination: new google.maps.LatLng(to.lat, to.lng),
                     travelMode: google.maps.TravelMode.DRIVING,
                 })
+                console.log(`[Directions] Segment ${i + 1} returned ${result.routes.length} routes`)
 
                 if (result.routes.length > 0 && result.routes[0].legs.length > 0) {
                     const leg = result.routes[0].legs[0]
@@ -115,9 +119,10 @@ export async function getRouteDirections(
                         endAddress: to.name || "",
                     })
                 }
-            } catch (segmentError) {
+            } catch (segmentError: any) {
                 // If one segment fails, fall back to straight line for that segment
-                console.warn(`Directions failed for segment ${from.name} → ${to.name}:`, segmentError)
+                console.error(`[Directions] ❌ SEGMENT FAILED: ${from.name} → ${to.name}:`, segmentError?.message || segmentError)
+                console.error(`[Directions] Error details:`, JSON.stringify(segmentError, null, 2))
                 allPath.push(
                     new google.maps.LatLng(from.lat, from.lng),
                     new google.maps.LatLng(to.lat, to.lng)
@@ -146,12 +151,16 @@ export async function getRouteDirections(
             legs: allLegs,
         }
 
+        console.log(`[Directions] ✅ Route ${routeId} complete: ${allPath.length} points, ${totalDistanceMeters}m`)
+
         // Cache it — so we only call the API once per route per session
         directionsCache.set(routeId, directionsResult)
 
         return directionsResult
-    } catch (error) {
-        console.warn(`Directions API failed for route ${routeId}:`, error)
+    } catch (error: any) {
+        console.error(`[Directions] ❌ TOTAL FAILURE for route ${routeId}:`, error?.message || error)
+        console.error(`[Directions] This usually means the Directions API is not enabled or billing is not set up in Google Cloud Console.`)
+        console.error(`[Directions] Go to: https://console.cloud.google.com/apis/library/directions-backend.googleapis.com`)
         return null
     }
 }
