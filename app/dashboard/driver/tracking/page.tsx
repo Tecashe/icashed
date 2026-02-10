@@ -35,22 +35,10 @@ import {
   AlertTriangle,
   CheckCircle2,
 } from "lucide-react"
-import type { MapVehicle, MapRoute, UserLocationData } from "@/components/map/leaflet-map"
+import { GoogleMap, type MapVehicle, type MapRoute, type UserLocationData } from "@/components/map/google-map"
 import { cn } from "@/lib/utils"
 import { calculateDistance } from "@/lib/geo-utils"
 import { useUserLocation } from "@/hooks/use-user-location"
-
-const LeafletMap = dynamic(
-  () => import("@/components/map/leaflet-map").then((m) => m.LeafletMap),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="flex h-full w-full items-center justify-center bg-muted/30">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-      </div>
-    ),
-  }
-)
 
 interface WaitingStage {
   id: string
@@ -78,6 +66,10 @@ export default function DriverTrackingPage() {
   const [selectedVehicleId, setSelectedVehicleId] = useState<string>("")
   const [selectedRouteId, setSelectedRouteId] = useState<string>("")
   const [direction, setDirection] = useState<"forward" | "reverse">("forward")
+
+  // Map settings
+  const [mapStyle, setMapStyle] = useState<"dark" | "light" | "satellite">("dark")
+  const [showTrafficLayer, setShowTrafficLayer] = useState(false)
 
   // Tracking state
   const [tracking, setTracking] = useState(false)
@@ -277,7 +269,11 @@ export default function DriverTrackingPage() {
     latitude: position.lat,
     longitude: position.lng,
     accuracy: position.accuracy,
-  } : driverGPS
+  } : driverGPS ? {
+    latitude: driverGPS.latitude,
+    longitude: driverGPS.longitude,
+    accuracy: driverGPS.accuracy,
+  } : null
 
   const mapVehicles: MapVehicle[] = position ? [{
     id: selectedVehicleId || "self",
@@ -545,17 +541,19 @@ export default function DriverTrackingPage() {
           MAP SECTION - Maximum space
       ═══════════════════════════════════════════════════════════════════ */}
       <div className="flex-1 relative min-h-0">
-        <LeafletMap
+        <GoogleMap
           vehicles={mapVehicles}
           routes={mapRoutes}
-          center={position ? [position.lat, position.lng] : driverGPS ? [driverGPS.latitude, driverGPS.longitude] : [-1.2921, 36.8219]}
-          zoom={position ? 15 : 13}
+          selectedVehicleId={selectedVehicleId}
+          selectedRouteId={selectedRouteId}
           showRouteLines={true}
           enableAnimation={true}
           highlightActiveRoute={true}
           flyToLocation={flyToLocation}
           userLocation={userLocation}
           showUserLocation={!tracking && !!driverGPS}
+          mapStyle={mapStyle}
+          showTrafficLayer={showTrafficLayer}
         />
 
         {/* Center on Me FAB */}
@@ -571,7 +569,7 @@ export default function DriverTrackingPage() {
 
         {/* Status Badge */}
         <div className="absolute top-2 left-2 z-10">
-          <Badge variant="secondary" className="shadow-sm text-xs">
+          <Badge variant="secondary" className="shadow-sm text-xs border border-border/50 bg-background/80 backdrop-blur">
             <MapPin className="h-3 w-3 mr-1" />
             {tracking ? "Tracking Active" : "Preview"}
           </Badge>
