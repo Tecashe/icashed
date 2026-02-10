@@ -373,6 +373,23 @@ export function GoogleMap({
 
         return () => {
             mounted = false
+
+            // Cleanup markers on unmount to prevent weird state
+            if (vehicleMarkersRef.current) {
+                vehicleMarkersRef.current.forEach((marker) => {
+                    try { marker.map = null } catch (e) { }
+                })
+                vehicleMarkersRef.current.clear()
+            }
+            if (stageMarkersRef.current) {
+                stageMarkersRef.current.forEach((marker) => {
+                    try { marker.map = null } catch (e) { }
+                })
+                stageMarkersRef.current = []
+            }
+            if (userLocationMarkerRef.current) {
+                try { userLocationMarkerRef.current.map = null } catch (e) { }
+            }
         }
     }, [])
 
@@ -959,14 +976,23 @@ export function GoogleMap({
           0%, 100% { opacity: 1; }
           50% { opacity: 0.5; }
         }
-      `}</style>
+            `}</style>
 
-            <div ref={mapRef} className={cn("w-full h-full", className)}>
+            <div className={cn("relative w-full h-full isolate", className)}>
+                {/* Map Container - Managed by Google Maps */}
+                <div
+                    ref={mapRef}
+                    id="google-map-container"
+                    className="absolute inset-0 w-full h-full"
+                    style={{ background: mapStyle === 'dark' ? '#0f0f1a' : '#f8fafc' }}
+                />
+
+                {/* Loading Grid - Managed by React */}
                 {!isLoaded && (
-                    <div className="flex items-center justify-center w-full h-full bg-muted/30">
+                    <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
                         <div className="flex flex-col items-center gap-3">
-                            <div className="w-10 h-10 border-3 border-primary border-t-transparent rounded-full animate-spin" />
-                            <p className="text-sm text-muted-foreground">Loading map...</p>
+                            <div className="w-10 h-10 border-4 border-primary/30 border-t-primary rounded-full animate-spin" />
+                            <p className="text-sm font-medium text-muted-foreground animate-pulse">Initializing Map...</p>
                         </div>
                     </div>
                 )}
