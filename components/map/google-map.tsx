@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState, useCallback } from "react"
 import { loadGoogleMaps } from "@/lib/google-maps-loader"
-import { getRouteDirections } from "@/lib/google-directions"
 import { cn } from "@/lib/utils"
 
 // ============================================================================
@@ -27,6 +26,8 @@ export interface MapVehicle {
     originStageName?: string
     destinationStageName?: string
     distanceFromUser?: number
+    rating?: number
+    imageUrl?: string
 }
 
 export interface MapStage {
@@ -310,7 +311,6 @@ export function GoogleMap({
     const vehiclePositionsRef = useRef<Map<string, { lat: number; lng: number }>>(new Map())
     const stageMarkersRef = useRef<google.maps.marker.AdvancedMarkerElement[]>([])
     const routePolylinesRef = useRef<google.maps.Polyline[]>([])
-    const directionsRenderersRef = useRef<google.maps.DirectionsRenderer[]>([])
     const userLocationMarkerRef = useRef<google.maps.marker.AdvancedMarkerElement | null>(null)
     const accuracyCircleRef = useRef<google.maps.Circle | null>(null)
     const distanceRingsRef = useRef<google.maps.Circle[]>([])
@@ -419,7 +419,7 @@ export function GoogleMap({
         }
     }, [flyToLocation, isLoaded])
 
-    // Draw routes using Directions API (road-following paths)
+    // Draw routes — clean stage-to-stage polylines
     useEffect(() => {
         if (!mapInstanceRef.current || !isLoaded || !showRouteLines) return
 
@@ -427,122 +427,83 @@ export function GoogleMap({
         routePolylinesRef.current.forEach((p) => p.setMap(null))
         routePolylinesRef.current = []
 
-        // Clear existing directions renderers
-        directionsRenderersRef.current.forEach((r) => r.setMap(null))
-        directionsRenderersRef.current = []
-
         // Clear existing stage markers
         stageMarkersRef.current.forEach((m) => {
-            try {
-                m.map = null
-            } catch (e) {
-                console.warn("Error removing stage marker:", e)
-            }
+            try { m.map = null } catch (e) { }
         })
         stageMarkersRef.current = []
 
-        // Draw each route
         routes.forEach((route) => {
             if (route.stages.length < 2) return
 
             const isSelected = route.id === selectedRouteId
             const isActive = route.isActive || isSelected
+            const path = route.stages.map((s) => ({ lat: s.lat, lng: s.lng }))
 
-            // Try Directions API for road-following path, fallback to straight lines
-            const drawWithDirections = async () => {
-                const stageCoords = route.stages.map((s) => ({ lat: s.lat, lng: s.lng, name: s.name }))
-                const directions = await getRouteDirections(route.id, stageCoords)
-
-                if (directions && directions.path.length > 0 && mapInstanceRef.current) {
-                    // Road-following path from Directions API
-                    const roadPath = directions.path.map((p) => ({ lat: p.lat(), lng: p.lng() }))
-
-                    // Glow effect
-                    if (isActive) {
-                        const glowLine = new google.maps.Polyline({
-                            path: roadPath,
-                            geodesic: true,
-                            strokeColor: route.color,
-                            strokeOpacity: 0.25,
-                            strokeWeight: 16,
-                            map: mapInstanceRef.current!,
-                            zIndex: 1,
-                        })
-                        routePolylinesRef.current.push(glowLine)
-                    }
-
-                    // Main route line
-                    const mainLine = new google.maps.Polyline({
-                        path: roadPath,
-                        geodesic: true,
-                        strokeColor: route.color,
-                        strokeOpacity: isActive ? 0.9 : 0.5,
-                        strokeWeight: isActive ? 5 : 3,
-                        map: mapInstanceRef.current!,
-                        zIndex: 2,
-                        icons: isActive ? [{
-                            icon: {
-                                path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
-                                scale: 3,
-                                fillColor: "#ffffff",
-                                fillOpacity: 0.9,
-                                strokeColor: route.color,
-                                strokeWeight: 1,
-                            },
-                            offset: "0",
-                            repeat: "120px",
-                        }] : undefined,
-                    })
-                    routePolylinesRef.current.push(mainLine)
-                } else {
-                    // Fallback: straight lines between stages
-                    drawStraightLines(route, isActive)
-                }
-            }
-
-            // Fallback function for straight-line drawing
-            const drawStraightLines = (route: MapRoute, isActive: boolean) => {
-                const path = route.stages.map((s) => ({ lat: s.lat, lng: s.lng }))
-
-                if (isActive) {
-                    const glowLine = new google.maps.Polyline({
-                        path,
-                        geodesic: true,
-                        strokeColor: route.color,
-                        strokeOpacity: 0.3,
-                        strokeWeight: 14,
-                        map: mapInstanceRef.current!,
-                    })
-                    routePolylinesRef.current.push(glowLine)
-                }
-
-                const mainLine = new google.maps.Polyline({
+            // Outer glow — soft wide band
+            if (isActive) {
+                const glowLine = new google.maps.Polyline({
                     path,
                     geodesic: true,
                     strokeColor: route.color,
-                    strokeOpacity: isActive ? 1 : 0.6,
-                    strokeWeight: isActive ? 6 : 3,
+                    strokeOpacity: 0.15,
+                    strokeWeight: 20,
                     map: mapInstanceRef.current!,
-                    icons: isActive ? [{
-                        icon: {
-                            path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
-                            scale: 3,
-                            fillColor: "#ffffff",
-                            fillOpacity: 1,
-                            strokeColor: route.color,
-                            strokeWeight: 1,
-                        },
-                        offset: "0",
-                        repeat: "100px",
-                    }] : undefined,
+                    zIndex: 1,
                 })
-                routePolylinesRef.current.push(mainLine)
+                routePolylinesRef.current.push(glowLine)
             }
 
-            // Kick off the directions request
-            drawWithDirections()
+            // Main route line — dashed for inactive, solid for active
+            const mainLine = new google.maps.Polyline({
+                path,
+                geodesic: true,
+                strokeColor: route.color,
+                strokeOpacity: isActive ? 0 : 0.45,
+                strokeWeight: isActive ? 0 : 3,
+                map: mapInstanceRef.current!,
+                zIndex: 2,
+                icons: isActive ? [
+                    {
+                        icon: {
+                            path: "M 0,-0.5 0,0.5",
+                            strokeOpacity: 0.85,
+                            strokeColor: route.color,
+                            strokeWeight: 5,
+                            scale: 5,
+                        },
+                        offset: "0",
+                        repeat: "14px",
+                    },
+                    {
+                        icon: {
+                            path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
+                            scale: 3.5,
+                            fillColor: "#ffffff",
+                            fillOpacity: 0.8,
+                            strokeColor: route.color,
+                            strokeWeight: 1.5,
+                        },
+                        offset: "50px",
+                        repeat: "180px",
+                    },
+                ] : [
+                    {
+                        icon: {
+                            path: "M 0,-0.5 0,0.5",
+                            strokeOpacity: 0.4,
+                            strokeColor: route.color,
+                            strokeWeight: 3,
+                            scale: 4,
+                        },
+                        offset: "0",
+                        repeat: "12px",
+                    },
+                ],
+            })
+            routePolylinesRef.current.push(mainLine)
 
-            // Stage markers (always placed at actual stage coordinates)
+            // Stage markers
             if (showStageLabels) {
                 route.stages.forEach((stage, index) => {
                     const markerContent = document.createElement("div")
@@ -557,12 +518,45 @@ export function GoogleMap({
 
                     marker.addListener("gmp-click", () => {
                         if (infoWindowRef.current) {
+                            const isTerminal = stage.isTerminal || index === 0 || index === route.stages.length - 1
                             infoWindowRef.current.setContent(`
-                <div style="padding: 8px; font-family: system-ui;">
-                  <strong style="font-size: 14px;">${stage.name}</strong>
-                  ${stage.isTerminal ? '<span style="margin-left: 8px; background: #10b981; color: white; padding: 2px 6px; border-radius: 4px; font-size: 10px;">Terminal</span>' : ''}
-                </div>
-              `)
+                              <div style="
+                                padding: 14px 16px;
+                                font-family: -apple-system, BlinkMacSystemFont, 'Inter', system-ui, sans-serif;
+                                background: linear-gradient(145deg, #1a1a2e, #16213e);
+                                color: #e2e8f0;
+                                border-radius: 14px;
+                                min-width: 180px;
+                                border: 1px solid rgba(255,255,255,0.08);
+                              ">
+                                <div style="display: flex; align-items: center; gap: 10px;">
+                                  <div style="
+                                    width: 36px; height: 36px;
+                                    border-radius: 10px;
+                                    background: linear-gradient(135deg, ${route.color}, ${adjustColor(route.color, -30)});
+                                    display: flex; align-items: center; justify-content: center;
+                                    font-size: 16px;
+                                    box-shadow: 0 4px 12px ${route.color}40;
+                                  ">
+                                    ${isTerminal ? '🏁' : '📍'}
+                                  </div>
+                                  <div>
+                                    <div style="font-weight: 700; font-size: 14px; color: #f1f5f9;">${stage.name}</div>
+                                    <div style="
+                                      font-size: 11px; color: #94a3b8; margin-top: 2px;
+                                      display: flex; align-items: center; gap: 6px;
+                                    ">
+                                      <span style="
+                                        display: inline-block; width: 8px; height: 8px;
+                                        border-radius: 50%; background: ${route.color};
+                                      "></span>
+                                      ${route.name}
+                                      ${isTerminal ? '<span style="background: #10b981; color: white; padding: 1px 6px; border-radius: 6px; font-size: 9px; font-weight: 600; letter-spacing: 0.5px;">TERMINAL</span>' : ''}
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            `)
                             infoWindowRef.current.open(mapInstanceRef.current!, marker)
                         }
                         onStageClick?.(stage, route.id)
@@ -623,30 +617,106 @@ export function GoogleMap({
                 marker.addListener("gmp-click", () => {
                     const distanceText = vehicle.distanceFromUser !== undefined
                         ? vehicle.distanceFromUser < 1000
-                            ? `${Math.round(vehicle.distanceFromUser)}m away`
-                            : `${(vehicle.distanceFromUser / 1000).toFixed(1)}km away`
+                            ? `${Math.round(vehicle.distanceFromUser)}m`
+                            : `${(vehicle.distanceFromUser / 1000).toFixed(1)}km`
                         : ""
+
+                    const vehicleEmoji = {
+                        MATATU: "🚐", BUS: "🚌", BODA: "🏍️", TUK_TUK: "🛺",
+                    }[vehicle.type] || "🚐"
+
+                    const ratingStars = vehicle.rating
+                        ? Array.from({ length: 5 }, (_, i) =>
+                            `<span style="color: ${i < Math.round(vehicle.rating!) ? '#fbbf24' : '#374151'}; font-size: 13px;">★</span>`
+                        ).join('')
+                        : ''
 
                     if (infoWindowRef.current) {
                         infoWindowRef.current.setContent(`
-              <div style="padding: 12px; font-family: system-ui; min-width: 200px;">
-                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
-                  <div style="width: 12px; height: 12px; border-radius: 50%; background: ${vehicle.color};"></div>
-                  <strong style="font-size: 16px;">${vehicle.plateNumber}</strong>
-                  ${vehicle.isLive ? '<span style="width: 8px; height: 8px; border-radius: 50%; background: #22c55e; animation: pulse 1.5s infinite;"></span>' : ''}
-                </div>
-                ${vehicle.originStageName && vehicle.destinationStageName ? `
-                  <div style="margin-bottom: 8px; color: #6b7280; font-size: 13px;">
-                    ${vehicle.originStageName} → ${vehicle.destinationStageName}
-                  </div>
-                ` : ''}
-                <div style="display: flex; gap: 16px; font-size: 12px; color: #9ca3af;">
-                  <span>⚡ ${Math.round(vehicle.speed)} km/h</span>
-                  ${distanceText ? `<span>📍 ${distanceText}</span>` : ''}
-                  ${vehicle.etaMinutes ? `<span>🕐 ${vehicle.etaMinutes} min</span>` : ''}
-                </div>
-              </div>
-            `)
+                          <div style="
+                            padding: 0;
+                            font-family: -apple-system, BlinkMacSystemFont, 'Inter', system-ui, sans-serif;
+                            background: linear-gradient(145deg, #1a1a2e, #16213e);
+                            color: #e2e8f0;
+                            border-radius: 14px;
+                            min-width: 240px;
+                            overflow: hidden;
+                            border: 1px solid rgba(255,255,255,0.06);
+                          ">
+                            <!-- Header with vehicle image -->
+                            <div style="
+                              padding: 14px 16px 10px;
+                              display: flex; align-items: center; gap: 12px;
+                              border-bottom: 1px solid rgba(255,255,255,0.06);
+                            ">
+                              <div style="
+                                width: 48px; height: 48px;
+                                border-radius: 12px;
+                                background: linear-gradient(135deg, ${vehicle.color}20, ${vehicle.color}40);
+                                display: flex; align-items: center; justify-content: center;
+                                font-size: 24px;
+                                border: 2px solid ${vehicle.color}50;
+                                flex-shrink: 0;
+                                ${vehicle.imageUrl ? `background-image: url(${vehicle.imageUrl}); background-size: cover; background-position: center; font-size: 0;` : ''}
+                              ">${vehicle.imageUrl ? '' : vehicleEmoji}</div>
+                              <div style="flex: 1; min-width: 0;">
+                                <div style="display: flex; align-items: center; gap: 6px;">
+                                  <span style="font-weight: 800; font-size: 16px; color: #f1f5f9; letter-spacing: 0.5px;">${vehicle.plateNumber}</span>
+                                  ${vehicle.isLive ? '<span style="width: 8px; height: 8px; border-radius: 50%; background: #22c55e; display: inline-block; box-shadow: 0 0 6px #22c55e80; animation: pulse 1.5s infinite;"></span>' : ''}
+                                </div>
+                                ${vehicle.nickname ? `<div style="font-size: 12px; color: #94a3b8; margin-top: 1px;">${vehicle.nickname}</div>` : ''}
+                                ${ratingStars ? `<div style="margin-top: 3px;">${ratingStars} <span style="color: #64748b; font-size: 11px;">${vehicle.rating?.toFixed(1)}</span></div>` : ''}
+                              </div>
+                            </div>
+
+                            <!-- Route info -->
+                            ${vehicle.originStageName && vehicle.destinationStageName ? `
+                              <div style="
+                                padding: 8px 16px;
+                                display: flex; align-items: center; gap: 8px;
+                                font-size: 12px; color: #94a3b8;
+                                border-bottom: 1px solid rgba(255,255,255,0.06);
+                              ">
+                                <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${vehicle.color};"></span>
+                                <span style="font-weight: 600; color: #cbd5e1;">${vehicle.originStageName}</span>
+                                <span style="color: #475569;">→</span>
+                                <span style="font-weight: 600; color: #cbd5e1;">${vehicle.destinationStageName}</span>
+                              </div>
+                            ` : ''}
+
+                            <!-- Stats row -->
+                            <div style="
+                              padding: 10px 16px 12px;
+                              display: flex; gap: 6px; flex-wrap: wrap;
+                            ">
+                              <div style="
+                                display: flex; align-items: center; gap: 5px;
+                                padding: 4px 10px; border-radius: 8px;
+                                background: rgba(59, 130, 246, 0.12);
+                                font-size: 12px; font-weight: 600;
+                                color: #93c5fd;
+                              ">⚡ ${Math.round(vehicle.speed)} km/h</div>
+                              ${distanceText ? `
+                                <div style="
+                                  display: flex; align-items: center; gap: 5px;
+                                  padding: 4px 10px; border-radius: 8px;
+                                  background: rgba(16, 185, 129, 0.12);
+                                  font-size: 12px; font-weight: 600;
+                                  color: #6ee7b7;
+                                ">📍 ${distanceText}</div>
+                              ` : ''}
+                              ${vehicle.etaMinutes ? `
+                                <div style="
+                                  display: flex; align-items: center; gap: 5px;
+                                  padding: 4px 10px; border-radius: 8px;
+                                  background: rgba(249, 115, 22, 0.12);
+                                  font-size: 12px; font-weight: 600;
+                                  color: #fdba74;
+                                ">🕐 ${vehicle.etaMinutes} min</div>
+                              ` : ''}
+                            </div>
+                          </div>
+                        `)
                         infoWindowRef.current.open(mapInstanceRef.current!, marker)
                     }
                     onVehicleClick?.(vehicle)
@@ -1011,33 +1081,59 @@ export function GoogleMap({
           z-index: 3;
         }
 
-        /* InfoWindow Styles */
-        .gmap-info-window {
-          padding: 0;
-        }
-
-        .gmap-info-window .gm-style-iw {
-          padding: 0 !important;
-        }
-
-        /* Hide default Google Maps controls styling */
+        /* InfoWindow — Dark premium styling */
         .gm-style .gm-style-iw-c {
           padding: 0 !important;
-          border-radius: 16px !important;
-          box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3) !important;
+          border-radius: 14px !important;
+          box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255,255,255,0.06) !important;
+          background: transparent !important;
+          overflow: visible !important;
         }
 
         .gm-style .gm-style-iw-d {
           overflow: hidden !important;
+          background: transparent !important;
         }
 
         .gm-style .gm-style-iw-tc {
           display: none !important;
         }
 
+        .gm-style .gm-style-iw-chr {
+          position: absolute !important;
+          top: 6px !important;
+          right: 6px !important;
+          z-index: 10 !important;
+        }
+
+        .gm-style .gm-style-iw-chr button {
+          width: 28px !important;
+          height: 28px !important;
+          border-radius: 8px !important;
+          background: rgba(255,255,255,0.08) !important;
+          backdrop-filter: blur(8px) !important;
+          display: flex !important;
+          align-items: center !important;
+          justify-content: center !important;
+          opacity: 1 !important;
+        }
+
+        .gm-style .gm-style-iw-chr button span {
+          color: #94a3b8 !important;
+          font-size: 18px !important;
+        }
+
+        .gm-style .gm-style-iw-chr button:hover {
+          background: rgba(255,255,255,0.15) !important;
+        }
+
+        .gm-style .gm-style-iw-chr button:hover span {
+          color: #e2e8f0 !important;
+        }
+
         @keyframes pulse {
           0%, 100% { opacity: 1; }
-          50% { opacity: 0.5; }
+          50% { opacity: 0.4; }
         }
             `}</style>
 
