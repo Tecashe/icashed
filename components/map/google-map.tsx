@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react"
 import { loadGoogleMaps } from "@/lib/google-maps-loader"
+import { getRouteDirections } from "@/lib/google-directions"
 import { cn } from "@/lib/utils"
 
 // ============================================================================
@@ -309,6 +310,7 @@ export function GoogleMap({
     const vehiclePositionsRef = useRef<Map<string, { lat: number; lng: number }>>(new Map())
     const stageMarkersRef = useRef<google.maps.marker.AdvancedMarkerElement[]>([])
     const routePolylinesRef = useRef<google.maps.Polyline[]>([])
+    const directionsRenderersRef = useRef<google.maps.DirectionsRenderer[]>([])
     const userLocationMarkerRef = useRef<google.maps.marker.AdvancedMarkerElement | null>(null)
     const accuracyCircleRef = useRef<google.maps.Circle | null>(null)
     const distanceRingsRef = useRef<google.maps.Circle[]>([])
@@ -417,13 +419,17 @@ export function GoogleMap({
         }
     }, [flyToLocation, isLoaded])
 
-    // Draw routes
+    // Draw routes using Directions API (road-following paths)
     useEffect(() => {
         if (!mapInstanceRef.current || !isLoaded || !showRouteLines) return
 
         // Clear existing polylines
         routePolylinesRef.current.forEach((p) => p.setMap(null))
         routePolylinesRef.current = []
+
+        // Clear existing directions renderers
+        directionsRenderersRef.current.forEach((r) => r.setMap(null))
+        directionsRenderersRef.current = []
 
         // Clear existing stage markers
         stageMarkersRef.current.forEach((m) => {
@@ -435,51 +441,108 @@ export function GoogleMap({
         })
         stageMarkersRef.current = []
 
+        // Draw each route
         routes.forEach((route) => {
             if (route.stages.length < 2) return
 
             const isSelected = route.id === selectedRouteId
             const isActive = route.isActive || isSelected
 
-            const path = route.stages.map((s) => ({ lat: s.lat, lng: s.lng }))
+            // Try Directions API for road-following path, fallback to straight lines
+            const drawWithDirections = async () => {
+                const stageCoords = route.stages.map((s) => ({ lat: s.lat, lng: s.lng, name: s.name }))
+                const directions = await getRouteDirections(route.id, stageCoords)
 
-            // Glow effect polyline
-            if (isActive) {
-                const glowLine = new google.maps.Polyline({
+                if (directions && directions.path.length > 0 && mapInstanceRef.current) {
+                    // Road-following path from Directions API
+                    const roadPath = directions.path.map((p) => ({ lat: p.lat(), lng: p.lng() }))
+
+                    // Glow effect
+                    if (isActive) {
+                        const glowLine = new google.maps.Polyline({
+                            path: roadPath,
+                            geodesic: true,
+                            strokeColor: route.color,
+                            strokeOpacity: 0.25,
+                            strokeWeight: 16,
+                            map: mapInstanceRef.current!,
+                            zIndex: 1,
+                        })
+                        routePolylinesRef.current.push(glowLine)
+                    }
+
+                    // Main route line
+                    const mainLine = new google.maps.Polyline({
+                        path: roadPath,
+                        geodesic: true,
+                        strokeColor: route.color,
+                        strokeOpacity: isActive ? 0.9 : 0.5,
+                        strokeWeight: isActive ? 5 : 3,
+                        map: mapInstanceRef.current!,
+                        zIndex: 2,
+                        icons: isActive ? [{
+                            icon: {
+                                path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
+                                scale: 3,
+                                fillColor: "#ffffff",
+                                fillOpacity: 0.9,
+                                strokeColor: route.color,
+                                strokeWeight: 1,
+                            },
+                            offset: "0",
+                            repeat: "120px",
+                        }] : undefined,
+                    })
+                    routePolylinesRef.current.push(mainLine)
+                } else {
+                    // Fallback: straight lines between stages
+                    drawStraightLines(route, isActive)
+                }
+            }
+
+            // Fallback function for straight-line drawing
+            const drawStraightLines = (route: MapRoute, isActive: boolean) => {
+                const path = route.stages.map((s) => ({ lat: s.lat, lng: s.lng }))
+
+                if (isActive) {
+                    const glowLine = new google.maps.Polyline({
+                        path,
+                        geodesic: true,
+                        strokeColor: route.color,
+                        strokeOpacity: 0.3,
+                        strokeWeight: 14,
+                        map: mapInstanceRef.current!,
+                    })
+                    routePolylinesRef.current.push(glowLine)
+                }
+
+                const mainLine = new google.maps.Polyline({
                     path,
                     geodesic: true,
                     strokeColor: route.color,
-                    strokeOpacity: 0.3,
-                    strokeWeight: 14,
+                    strokeOpacity: isActive ? 1 : 0.6,
+                    strokeWeight: isActive ? 6 : 3,
                     map: mapInstanceRef.current!,
+                    icons: isActive ? [{
+                        icon: {
+                            path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
+                            scale: 3,
+                            fillColor: "#ffffff",
+                            fillOpacity: 1,
+                            strokeColor: route.color,
+                            strokeWeight: 1,
+                        },
+                        offset: "0",
+                        repeat: "100px",
+                    }] : undefined,
                 })
-                routePolylinesRef.current.push(glowLine)
+                routePolylinesRef.current.push(mainLine)
             }
 
-            // Main route line
-            const mainLine = new google.maps.Polyline({
-                path,
-                geodesic: true,
-                strokeColor: route.color,
-                strokeOpacity: isActive ? 1 : 0.6,
-                strokeWeight: isActive ? 6 : 3,
-                map: mapInstanceRef.current!,
-                icons: isActive ? [{
-                    icon: {
-                        path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
-                        scale: 3,
-                        fillColor: "#ffffff",
-                        fillOpacity: 1,
-                        strokeColor: route.color,
-                        strokeWeight: 1,
-                    },
-                    offset: "0",
-                    repeat: "100px",
-                }] : undefined,
-            })
-            routePolylinesRef.current.push(mainLine)
+            // Kick off the directions request
+            drawWithDirections()
 
-            // Stage markers
+            // Stage markers (always placed at actual stage coordinates)
             if (showStageLabels) {
                 route.stages.forEach((stage, index) => {
                     const markerContent = document.createElement("div")

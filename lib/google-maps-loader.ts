@@ -47,6 +47,7 @@ export async function loadGoogleMaps(): Promise<typeof google> {
         importLibrary("places"),
         importLibrary("geometry"),
         importLibrary("marker"),
+        importLibrary("routes"),
     ]).then(() => google)
 
     return googleMapsLoaderPromise

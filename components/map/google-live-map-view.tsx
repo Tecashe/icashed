@@ -43,6 +43,7 @@ import { useRealtimePositions } from "@/hooks/use-realtime-positions"
 import { useRoutes, type LivePosition } from "@/hooks/use-data"
 import { useUserLocation } from "@/hooks/use-user-location"
 import { findNearest, calculateDistance } from "@/lib/geo-utils"
+import { getDistanceMatrix, type DistanceMatrixEntry } from "@/lib/google-directions"
 import { cn } from "@/lib/utils"
 import { GoogleMap, type MapVehicle, type MapRoute, type UserLocationData, type NearestStageData, type MapStage } from "@/components/map/google-map"
 import {
@@ -73,6 +74,7 @@ const STAGE_PROXIMITY_THRESHOLD = 500
 const NEARBY_VEHICLE_RADIUS = 5000
 const VERY_CLOSE_THRESHOLD = 500
 const CLOSE_THRESHOLD = 1500
+const DISTANCE_MATRIX_INTERVAL = 30_000 // 30 seconds
 
 interface LiveMapViewProps {
     isFullScreen?: boolean
@@ -116,6 +118,10 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
     const [showDistanceRings, setShowDistanceRings] = useState(true)
     const [filterBySpeed, setFilterBySpeed] = useState<"all" | "moving" | "stopped">("all")
     const [showOnlyReliable, setShowOnlyReliable] = useState(false)
+
+    // Distance Matrix state: vehicleId -> { distanceMeters, durationSeconds }
+    const [distanceMatrixResults, setDistanceMatrixResults] = useState<Map<string, DistanceMatrixEntry>>(new Map())
+    const distanceMatrixTimerRef = useRef<NodeJS.Timeout | null>(null)
 
     // Real-time data
     const { positions: allPositions, isRealtime, connectionState } = useRealtimePositions()
@@ -285,6 +291,48 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
         return filtered
     }, [selectedRouteId, allPositions, userLocation, filterBySpeed, showOnlyReliable])
 
+    // ═══════════════════════════════════════════════════════════════════
+    // DISTANCE MATRIX — road distance + traffic-aware ETA
+    // ═══════════════════════════════════════════════════════════════════
+
+    useEffect(() => {
+        if (!userLocation || activeVehicles.length === 0) return
+
+        const fetchDistanceMatrix = async () => {
+            try {
+                const origins = activeVehicles.map((v) => ({
+                    id: v.vehicleId,
+                    lat: v.position.latitude,
+                    lng: v.position.longitude,
+                }))
+
+                const destination = {
+                    lat: userLocation.latitude,
+                    lng: userLocation.longitude,
+                }
+
+                const results = await getDistanceMatrix(origins, destination)
+                if (results.size > 0) {
+                    setDistanceMatrixResults(results)
+                }
+            } catch (error) {
+                console.warn("Distance Matrix fetch failed:", error)
+            }
+        }
+
+        // Fetch immediately
+        fetchDistanceMatrix()
+
+        // Then every 30 seconds
+        distanceMatrixTimerRef.current = setInterval(fetchDistanceMatrix, DISTANCE_MATRIX_INTERVAL)
+
+        return () => {
+            if (distanceMatrixTimerRef.current) {
+                clearInterval(distanceMatrixTimerRef.current)
+            }
+        }
+    }, [userLocation, activeVehicles])
+
     const mapVehicles: MapVehicle[] = useMemo(() => {
         return activeVehicles.map((v) => {
             const vehicleRoute = v.routes[0]
@@ -319,7 +367,14 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
             let distanceFromUser: number | undefined
             let etaMinutes: number | undefined
 
-            if (userLocation) {
+            // Use Distance Matrix (road distance + traffic ETA) if available
+            const dmResult = distanceMatrixResults.get(v.vehicleId)
+            if (dmResult) {
+                distanceFromUser = dmResult.distanceMeters
+                const durationSec = dmResult.durationInTrafficSeconds || dmResult.durationSeconds
+                etaMinutes = Math.ceil(durationSec / 60)
+            } else if (userLocation) {
+                // Fallback to Haversine + naive ETA
                 distanceFromUser = calculateDistance(
                     userLocation.latitude,
                     userLocation.longitude,
@@ -348,7 +403,7 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
                 etaMinutes,
             }
         })
-    }, [activeVehicles, routes, userLocation])
+    }, [activeVehicles, routes, userLocation, distanceMatrixResults])
 
     const nearbyVehiclesSorted = useMemo(() => {
         return mapVehicles
