@@ -48,8 +48,15 @@ const DISTANCE_MATRIX_CACHE_TTL = 30_000 // 30 seconds
 // ============================================================================
 
 /**
- * Get road-following route path for an array of stage coordinates.
- * Uses Google Directions API with waypoints.
+ * Get road-following route path by routing EACH CONSECUTIVE PAIR of stages.
+ *
+ * Why segment-by-segment?
+ * When you route from Stage A → Stage Z with all intermediates as waypoints,
+ * Google picks whatever optimal road it wants, which often doesn't match the
+ * actual matatu route. By routing A→B, B→C, C→D separately, each segment is
+ * short enough that Google follows the actual (and usually only) road between
+ * them.
+ *
  * Results are cached by routeId for the entire session.
  */
 export async function getRouteDirections(
@@ -66,77 +73,80 @@ export async function getRouteDirections(
     try {
         const directionsService = new google.maps.DirectionsService()
 
-        const origin = stages[0]
-        const destination = stages[stages.length - 1]
+        const allPath: google.maps.LatLng[] = []
+        const allLegs: DirectionsResult["legs"] = []
 
-        // Google allows max 25 waypoints (23 intermediate + origin + destination)
-        // For routes with many stages, we sample intermediate waypoints
-        let waypoints: google.maps.DirectionsWaypoint[] = []
-        const intermediateStages = stages.slice(1, -1)
+        // Route each consecutive pair: A→B, B→C, C→D, ...
+        for (let i = 0; i < stages.length - 1; i++) {
+            const from = stages[i]
+            const to = stages[i + 1]
 
-        if (intermediateStages.length <= 23) {
-            waypoints = intermediateStages.map((s) => ({
-                location: new google.maps.LatLng(s.lat, s.lng),
-                stopover: true,
-            }))
-        } else {
-            // Sample evenly if too many stages
-            const step = intermediateStages.length / 23
-            for (let i = 0; i < 23; i++) {
-                const idx = Math.round(i * step)
-                const s = intermediateStages[idx]
-                waypoints.push({
-                    location: new google.maps.LatLng(s.lat, s.lng),
-                    stopover: true,
+            try {
+                const result = await directionsService.route({
+                    origin: new google.maps.LatLng(from.lat, from.lng),
+                    destination: new google.maps.LatLng(to.lat, to.lng),
+                    travelMode: google.maps.TravelMode.DRIVING,
+                })
+
+                if (result.routes.length > 0 && result.routes[0].legs.length > 0) {
+                    const leg = result.routes[0].legs[0]
+
+                    // Extract road-following points from this segment
+                    for (const step of leg.steps) {
+                        allPath.push(...step.path)
+                    }
+
+                    allLegs.push({
+                        distanceMeters: leg.distance?.value || 0,
+                        durationSeconds: leg.duration?.value || 0,
+                        startAddress: leg.start_address || from.name || "",
+                        endAddress: leg.end_address || to.name || "",
+                    })
+                } else {
+                    // Fallback: straight line for this segment
+                    allPath.push(
+                        new google.maps.LatLng(from.lat, from.lng),
+                        new google.maps.LatLng(to.lat, to.lng)
+                    )
+                    allLegs.push({
+                        distanceMeters: 0,
+                        durationSeconds: 0,
+                        startAddress: from.name || "",
+                        endAddress: to.name || "",
+                    })
+                }
+            } catch (segmentError) {
+                // If one segment fails, fall back to straight line for that segment
+                console.warn(`Directions failed for segment ${from.name} → ${to.name}:`, segmentError)
+                allPath.push(
+                    new google.maps.LatLng(from.lat, from.lng),
+                    new google.maps.LatLng(to.lat, to.lng)
+                )
+                allLegs.push({
+                    distanceMeters: 0,
+                    durationSeconds: 0,
+                    startAddress: from.name || "",
+                    endAddress: to.name || "",
                 })
             }
-        }
 
-        const result = await directionsService.route({
-            origin: new google.maps.LatLng(origin.lat, origin.lng),
-            destination: new google.maps.LatLng(destination.lat, destination.lng),
-            waypoints,
-            optimizeWaypoints: false, // Keep stage order
-            travelMode: google.maps.TravelMode.DRIVING,
-            drivingOptions: {
-                departureTime: new Date(),
-                trafficModel: google.maps.TrafficModel.BEST_GUESS,
-            },
-        })
-
-        if (result.routes.length === 0) return null
-
-        const route = result.routes[0]
-
-        // Extract full path from all legs
-        const path: google.maps.LatLng[] = []
-        const legs: DirectionsResult["legs"] = []
-
-        for (const leg of route.legs) {
-            // Add all points from this leg's steps
-            for (const step of leg.steps) {
-                path.push(...step.path)
+            // Small delay between API calls to avoid rate limiting
+            if (i < stages.length - 2) {
+                await new Promise((r) => setTimeout(r, 200))
             }
-
-            legs.push({
-                distanceMeters: leg.distance?.value || 0,
-                durationSeconds: leg.duration?.value || 0,
-                startAddress: leg.start_address || "",
-                endAddress: leg.end_address || "",
-            })
         }
 
-        const totalDistanceMeters = legs.reduce((sum, l) => sum + l.distanceMeters, 0)
-        const totalDurationSeconds = legs.reduce((sum, l) => sum + l.durationSeconds, 0)
+        const totalDistanceMeters = allLegs.reduce((sum, l) => sum + l.distanceMeters, 0)
+        const totalDurationSeconds = allLegs.reduce((sum, l) => sum + l.durationSeconds, 0)
 
         const directionsResult: DirectionsResult = {
-            path,
+            path: allPath,
             totalDistanceMeters,
             totalDurationSeconds,
-            legs,
+            legs: allLegs,
         }
 
-        // Cache it
+        // Cache it — so we only call the API once per route per session
         directionsCache.set(routeId, directionsResult)
 
         return directionsResult

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react"
 import { loadGoogleMaps } from "@/lib/google-maps-loader"
+import { getRouteDirections } from "@/lib/google-directions"
 import { cn } from "@/lib/utils"
 
 // ============================================================================
@@ -9,80 +10,80 @@ import { cn } from "@/lib/utils"
 // ============================================================================
 
 export interface MapVehicle {
-    id: string
-    plateNumber: string
-    nickname?: string | null
-    type: string
-    lat: number
-    lng: number
-    speed: number
-    heading: number
-    color: string
-    routeName: string
-    isLive?: boolean
-    progress?: number
-    etaMinutes?: number
-    nextStageName?: string
-    originStageName?: string
-    destinationStageName?: string
-    distanceFromUser?: number
-    rating?: number
-    imageUrl?: string
+  id: string
+  plateNumber: string
+  nickname?: string | null
+  type: string
+  lat: number
+  lng: number
+  speed: number
+  heading: number
+  color: string
+  routeName: string
+  isLive?: boolean
+  progress?: number
+  etaMinutes?: number
+  nextStageName?: string
+  originStageName?: string
+  destinationStageName?: string
+  distanceFromUser?: number
+  rating?: number
+  imageUrl?: string
 }
 
 export interface MapStage {
-    id?: string
-    name: string
-    lat: number
-    lng: number
-    isTerminal: boolean
-    order?: number
+  id?: string
+  name: string
+  lat: number
+  lng: number
+  isTerminal: boolean
+  order?: number
 }
 
 export interface MapRoute {
-    id: string
-    name: string
-    color: string
-    stages: MapStage[]
-    isActive?: boolean
+  id: string
+  name: string
+  color: string
+  stages: MapStage[]
+  isActive?: boolean
 }
 
 export interface UserLocationData {
-    latitude: number
-    longitude: number
-    accuracy?: number
+  latitude: number
+  longitude: number
+  accuracy?: number
 }
 
 export interface NearestStageData {
-    stage: MapStage
-    distance: number
-    walkingTime: number
-    direction: string
+  stage: MapStage
+  distance: number
+  walkingTime: number
+  direction: string
 }
 
 interface GoogleMapProps {
-    vehicles: MapVehicle[]
-    routes?: MapRoute[]
-    selectedVehicleId?: string | null
-    selectedRouteId?: string | null
-    onVehicleClick?: (vehicle: MapVehicle) => void
-    onStageClick?: (stage: MapStage, routeId: string) => void
-    center?: { lat: number; lng: number }
-    zoom?: number
-    className?: string
-    showRouteLines?: boolean
-    showStageLabels?: boolean
-    enableAnimation?: boolean
-    highlightActiveRoute?: boolean
-    userLocation?: UserLocationData | null
-    nearestStage?: NearestStageData | null
-    showUserLocation?: boolean
-    showGuidancePath?: boolean
-    flyToLocation?: { lat: number; lng: number; zoom?: number } | null
-    showDistanceRings?: boolean
-    showTrafficLayer?: boolean
-    mapStyle?: "dark" | "light" | "satellite" | "terrain"
-    onMapReady?: (map: google.maps.Map) => void
+  vehicles: MapVehicle[]
+  routes?: MapRoute[]
+  selectedVehicleId?: string | null
+  selectedRouteId?: string | null
+  onVehicleClick?: (vehicle: MapVehicle) => void
+  onStageClick?: (stage: MapStage, routeId: string) => void
+  center?: { lat: number; lng: number }
+  zoom?: number
+  className?: string
+  showRouteLines?: boolean
+  showStageLabels?: boolean
+  enableAnimation?: boolean
+  highlightActiveRoute?: boolean
+  userLocation?: UserLocationData | null
+  nearestStage?: NearestStageData | null
+  showUserLocation?: boolean
+  showGuidancePath?: boolean
+  flyToLocation?: { lat: number; lng: number; zoom?: number } | null
+  showDistanceRings?: boolean
+  showTrafficLayer?: boolean
+  mapStyle?: "dark" | "light" | "satellite" | "terrain"
+  onMapReady?: (map: google.maps.Map) => void
 }
 
 // ============================================================================
@@ -90,114 +91,114 @@ interface GoogleMapProps {
 // ============================================================================
 
 const DARK_MAP_STYLE: google.maps.MapTypeStyle[] = [
-    { elementType: "geometry", stylers: [{ color: "#0f0f1a" }] },
-    { elementType: "labels.text.stroke", stylers: [{ color: "#0f0f1a" }] },
-    { elementType: "labels.text.fill", stylers: [{ color: "#6b7280" }] },
-    {
-        featureType: "administrative",
-        elementType: "geometry",
-        stylers: [{ color: "#1f2937" }],
-    },
-    {
-        featureType: "administrative.country",
-        elementType: "labels.text.fill",
-        stylers: [{ color: "#9ca3af" }],
-    },
-    {
-        featureType: "administrative.locality",
-        elementType: "labels.text.fill",
-        stylers: [{ color: "#d1d5db" }],
-    },
-    {
-        featureType: "poi",
-        elementType: "labels.text.fill",
-        stylers: [{ color: "#6b7280" }],
-    },
-    {
-        featureType: "poi.park",
-        elementType: "geometry",
-        stylers: [{ color: "#0d1f12" }],
-    },
-    {
-        featureType: "poi.park",
-        elementType: "labels.text.fill",
-        stylers: [{ color: "#4ade80" }],
-    },
-    {
-        featureType: "road",
-        elementType: "geometry",
-        stylers: [{ color: "#1e293b" }],
-    },
-    {
-        featureType: "road",
-        elementType: "geometry.stroke",
-        stylers: [{ color: "#0f172a" }],
-    },
-    {
-        featureType: "road.highway",
-        elementType: "geometry",
-        stylers: [{ color: "#334155" }],
-    },
-    {
-        featureType: "road.highway",
-        elementType: "geometry.stroke",
-        stylers: [{ color: "#1e293b" }],
-    },
-    {
-        featureType: "road.highway",
-        elementType: "labels.text.fill",
-        stylers: [{ color: "#f9fafb" }],
-    },
-    {
-        featureType: "transit",
-        elementType: "geometry",
-        stylers: [{ color: "#1e293b" }],
-    },
-    {
-        featureType: "transit.station",
-        elementType: "labels.text.fill",
-        stylers: [{ color: "#d1d5db" }],
-    },
-    {
-        featureType: "water",
-        elementType: "geometry",
-        stylers: [{ color: "#0c1929" }],
-    },
-    {
-        featureType: "water",
-        elementType: "labels.text.fill",
-        stylers: [{ color: "#4b5563" }],
-    },
+  { elementType: "geometry", stylers: [{ color: "#0f0f1a" }] },
+  { elementType: "labels.text.stroke", stylers: [{ color: "#0f0f1a" }] },
+  { elementType: "labels.text.fill", stylers: [{ color: "#6b7280" }] },
+  {
+    featureType: "administrative",
+    elementType: "geometry",
+    stylers: [{ color: "#1f2937" }],
+  },
+  {
+    featureType: "administrative.country",
+    elementType: "labels.text.fill",
+    stylers: [{ color: "#9ca3af" }],
+  },
+  {
+    featureType: "administrative.locality",
+    elementType: "labels.text.fill",
+    stylers: [{ color: "#d1d5db" }],
+  },
+  {
+    featureType: "poi",
+    elementType: "labels.text.fill",
+    stylers: [{ color: "#6b7280" }],
+  },
+  {
+    featureType: "poi.park",
+    elementType: "geometry",
+    stylers: [{ color: "#0d1f12" }],
+  },
+  {
+    featureType: "poi.park",
+    elementType: "labels.text.fill",
+    stylers: [{ color: "#4ade80" }],
+  },
+  {
+    featureType: "road",
+    elementType: "geometry",
+    stylers: [{ color: "#1e293b" }],
+  },
+  {
+    featureType: "road",
+    elementType: "geometry.stroke",
+    stylers: [{ color: "#0f172a" }],
+  },
+  {
+    featureType: "road.highway",
+    elementType: "geometry",
+    stylers: [{ color: "#334155" }],
+  },
+  {
+    featureType: "road.highway",
+    elementType: "geometry.stroke",
+    stylers: [{ color: "#1e293b" }],
+  },
+  {
+    featureType: "road.highway",
+    elementType: "labels.text.fill",
+    stylers: [{ color: "#f9fafb" }],
+  },
+  {
+    featureType: "transit",
+    elementType: "geometry",
+    stylers: [{ color: "#1e293b" }],
+  },
+  {
+    featureType: "transit.station",
+    elementType: "labels.text.fill",
+    stylers: [{ color: "#d1d5db" }],
+  },
+  {
+    featureType: "water",
+    elementType: "geometry",
+    stylers: [{ color: "#0c1929" }],
+  },
+  {
+    featureType: "water",
+    elementType: "labels.text.fill",
+    stylers: [{ color: "#4b5563" }],
+  },
 ]
 
 const LIGHT_MAP_STYLE: google.maps.MapTypeStyle[] = [
-    { elementType: "geometry", stylers: [{ color: "#f8fafc" }] },
-    { elementType: "labels.text.fill", stylers: [{ color: "#334155" }] },
-    {
-        featureType: "road",
-        elementType: "geometry",
-        stylers: [{ color: "#ffffff" }],
-    },
-    {
-        featureType: "road",
-        elementType: "geometry.stroke",
-        stylers: [{ color: "#e2e8f0" }],
-    },
-    {
-        featureType: "road.highway",
-        elementType: "geometry",
-        stylers: [{ color: "#fef3c7" }],
-    },
-    {
-        featureType: "water",
-        elementType: "geometry",
-        stylers: [{ color: "#dbeafe" }],
-    },
-    {
-        featureType: "poi.park",
-        elementType: "geometry",
-        stylers: [{ color: "#dcfce7" }],
-    },
+  { elementType: "geometry", stylers: [{ color: "#f8fafc" }] },
+  { elementType: "labels.text.fill", stylers: [{ color: "#334155" }] },
+  {
+    featureType: "road",
+    elementType: "geometry",
+    stylers: [{ color: "#ffffff" }],
+  },
+  {
+    featureType: "road",
+    elementType: "geometry.stroke",
+    stylers: [{ color: "#e2e8f0" }],
+  },
+  {
+    featureType: "road.highway",
+    elementType: "geometry",
+    stylers: [{ color: "#fef3c7" }],
+  },
+  {
+    featureType: "water",
+    elementType: "geometry",
+    stylers: [{ color: "#dbeafe" }],
+  },
+  {
+    featureType: "poi.park",
+    elementType: "geometry",
+    stylers: [{ color: "#dcfce7" }],
+  },
 ]
 
 // ============================================================================
@@ -205,19 +206,19 @@ const LIGHT_MAP_STYLE: google.maps.MapTypeStyle[] = [
 // ============================================================================
 
 function createVehicleMarkerHtml(vehicle: MapVehicle, isSelected: boolean): string {
-    const size = isSelected ? 52 : 44
-    const isLive = vehicle.isLive !== false
-    const isMoving = vehicle.speed > 5
+  const size = isSelected ? 52 : 44
+  const isLive = vehicle.isLive !== false
+  const isMoving = vehicle.speed > 5
 
-    // Vehicle type emoji/icon
-    const vehicleEmoji = {
-        MATATU: "🚐",
-        BUS: "🚌",
-        BODA: "🏍️",
-        TUK_TUK: "🛺",
-    }[vehicle.type] || "🚐"
+  // Vehicle type emoji/icon
+  const vehicleEmoji = {
+    MATATU: "🚐",
+    BUS: "🚌",
+    BODA: "🏍️",
+    TUK_TUK: "🛺",
+  }[vehicle.type] || "🚐"
 
-    return `
+  return `
     <div class="gmap-vehicle-marker ${isLive ? 'gmap-vehicle-live' : ''} ${isSelected ? 'gmap-vehicle-selected' : ''}" 
          style="--vehicle-color: ${vehicle.color}; transform: rotate(${vehicle.heading}deg);">
       <div class="gmap-vehicle-pulse-ring"></div>
@@ -233,28 +234,28 @@ function createVehicleMarkerHtml(vehicle: MapVehicle, isSelected: boolean): stri
 }
 
 function createStageMarkerHtml(
-    stage: MapStage,
-    index: number,
-    totalStages: number,
-    routeColor: string
+  stage: MapStage,
+  index: number,
+  totalStages: number,
+  routeColor: string
 ): string {
-    const isTerminal = stage.isTerminal || index === 0 || index === totalStages - 1
-    const size = isTerminal ? 32 : 20
-    const label = index === 0 ? "A" : index === totalStages - 1 ? "B" : ""
+  const isTerminal = stage.isTerminal || index === 0 || index === totalStages - 1
+  const size = isTerminal ? 32 : 20
+  const label = index === 0 ? "A" : index === totalStages - 1 ? "B" : ""
 
-    return `
+  return `
     <div class="gmap-stage-marker ${isTerminal ? 'gmap-stage-terminal' : ''}" 
          style="--stage-color: ${routeColor}; width: ${size}px; height: ${size}px;">
       ${isTerminal
-            ? `<span class="gmap-stage-label">${label}</span>`
-            : '<div class="gmap-stage-dot"></div>'}
+      ? `<span class="gmap-stage-label">${label}</span>`
+      : '<div class="gmap-stage-dot"></div>'}
       ${isTerminal ? '<div class="gmap-stage-pulse"></div>' : ''}
     </div>
   `
 }
 
 function createUserLocationMarkerHtml(): string {
-    return `
+  return `
     <div class="gmap-user-location">
       <div class="gmap-user-pulse"></div>
       <div class="gmap-user-pulse gmap-user-pulse-2"></div>
@@ -266,11 +267,11 @@ function createUserLocationMarkerHtml(): string {
 
 // Utility to adjust color brightness
 function adjustColor(color: string, amount: number): string {
-    const hex = color.replace("#", "")
-    const r = Math.max(0, Math.min(255, parseInt(hex.substring(0, 2), 16) + amount))
-    const g = Math.max(0, Math.min(255, parseInt(hex.substring(2, 4), 16) + amount))
-    const b = Math.max(0, Math.min(255, parseInt(hex.substring(4, 6), 16) + amount))
-    return `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}`
+  const hex = color.replace("#", "")
+  const r = Math.max(0, Math.min(255, parseInt(hex.substring(0, 2), 16) + amount))
+  const g = Math.max(0, Math.min(255, parseInt(hex.substring(2, 4), 16) + amount))
+  const b = Math.max(0, Math.min(255, parseInt(hex.substring(4, 6), 16) + amount))
+  return `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}`
 }
 
 // ============================================================================
@@ -278,248 +279,288 @@ function adjustColor(color: string, amount: number): string {
 // ============================================================================
 
 export function GoogleMap({
-    vehicles,
-    routes = [],
-    selectedVehicleId,
-    selectedRouteId,
-    onVehicleClick,
-    onStageClick,
-    center = { lat: -1.2921, lng: 36.8219 }, // Nairobi CBD
-    zoom = 13,
-    className = "",
-    showRouteLines = true,
-    showStageLabels = true,
-    enableAnimation = true,
-    highlightActiveRoute = true,
-    userLocation,
-    nearestStage,
-    showUserLocation = true,
-    showGuidancePath = true,
-    flyToLocation,
-    showDistanceRings = false,
-    showTrafficLayer = false,
-    mapStyle = "dark",
-    onMapReady,
+  vehicles,
+  routes = [],
+  selectedVehicleId,
+  selectedRouteId,
+  onVehicleClick,
+  onStageClick,
+  center = { lat: -1.2921, lng: 36.8219 }, // Nairobi CBD
+  zoom = 13,
+  className = "",
+  showRouteLines = true,
+  showStageLabels = true,
+  enableAnimation = true,
+  highlightActiveRoute = true,
+  userLocation,
+  nearestStage,
+  showUserLocation = true,
+  showGuidancePath = true,
+  flyToLocation,
+  showDistanceRings = false,
+  showTrafficLayer = false,
+  mapStyle = "dark",
+  onMapReady,
 }: GoogleMapProps) {
-    const mapRef = useRef<HTMLDivElement>(null)
-    const mapInstanceRef = useRef<google.maps.Map | null>(null)
-    const [isLoaded, setIsLoaded] = useState(false)
-    const [loadError, setLoadError] = useState<string | null>(null)
+  const mapRef = useRef<HTMLDivElement>(null)
+  const mapInstanceRef = useRef<google.maps.Map | null>(null)
+  const [isLoaded, setIsLoaded] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
 
-    // Refs for map objects
-    const vehicleMarkersRef = useRef<Map<string, google.maps.marker.AdvancedMarkerElement>>(new Map())
-    const vehiclePositionsRef = useRef<Map<string, { lat: number; lng: number }>>(new Map())
-    const stageMarkersRef = useRef<google.maps.marker.AdvancedMarkerElement[]>([])
-    const routePolylinesRef = useRef<google.maps.Polyline[]>([])
-    const userLocationMarkerRef = useRef<google.maps.marker.AdvancedMarkerElement | null>(null)
-    const accuracyCircleRef = useRef<google.maps.Circle | null>(null)
-    const distanceRingsRef = useRef<google.maps.Circle[]>([])
-    const guidancePathRef = useRef<google.maps.Polyline | null>(null)
-    const trafficLayerRef = useRef<google.maps.TrafficLayer | null>(null)
-    const infoWindowRef = useRef<google.maps.InfoWindow | null>(null)
+  // Refs for map objects
+  const vehicleMarkersRef = useRef<Map<string, google.maps.marker.AdvancedMarkerElement>>(new Map())
+  const vehiclePositionsRef = useRef<Map<string, { lat: number; lng: number }>>(new Map())
+  const stageMarkersRef = useRef<google.maps.marker.AdvancedMarkerElement[]>([])
+  const routePolylinesRef = useRef<google.maps.Polyline[]>([])
+  const routePathsRef = useRef<Map<string, Array<{ lat: number; lng: number }>>>(new Map())
+  const userLocationMarkerRef = useRef<google.maps.marker.AdvancedMarkerElement | null>(null)
+  const accuracyCircleRef = useRef<google.maps.Circle | null>(null)
+  const distanceRingsRef = useRef<google.maps.Circle[]>([])
+  const guidancePathRef = useRef<google.maps.Polyline | null>(null)
+  const trafficLayerRef = useRef<google.maps.TrafficLayer | null>(null)
+  const infoWindowRef = useRef<google.maps.InfoWindow | null>(null)
 
-    // Initialize map
-    useEffect(() => {
-        if (!mapRef.current) return
+  // Initialize map
+  useEffect(() => {
+    if (!mapRef.current) return
 
-        let mounted = true
+    let mounted = true
 
-        async function initMap() {
-            try {
-                await loadGoogleMaps()
+    async function initMap() {
+      try {
+        await loadGoogleMaps()
 
-                if (!mounted || !mapRef.current) return
+        if (!mounted || !mapRef.current) return
 
-                const styles = mapStyle === "dark" ? DARK_MAP_STYLE : mapStyle === "light" ? LIGHT_MAP_STYLE : []
+        const styles = mapStyle === "dark" ? DARK_MAP_STYLE : mapStyle === "light" ? LIGHT_MAP_STYLE : []
 
-                // NOTE: When using mapId (required for AdvancedMarkerElement),
-                // we cannot use the 'styles' property. Styling must be done in Cloud Console.
-                // styles, 
-                const map = new google.maps.Map(mapRef.current, {
-                    center,
-                    zoom,
-                    mapId: "premium_transport_map", // Required for Advanced Markers
-                    // styles, // Conflicting property removed
-                    disableDefaultUI: true,
-                    zoomControl: false,
-                    mapTypeControl: false,
-                    scaleControl: true,
-                    streetViewControl: false,
-                    rotateControl: false,
-                    fullscreenControl: false,
-                    clickableIcons: false,
-                    gestureHandling: "greedy",
-                    restriction: {
-                        latLngBounds: {
-                            north: 5,
-                            south: -5,
-                            west: 33,
-                            east: 42,
-                        },
-                        strictBounds: false,
-                    },
-                })
+        // NOTE: When using mapId (required for AdvancedMarkerElement),
+        // we cannot use the 'styles' property. Styling must be done in Cloud Console.
+        // styles, 
+        const map = new google.maps.Map(mapRef.current, {
+          center,
+          zoom,
+          mapId: "premium_transport_map", // Required for Advanced Markers
+          // styles, // Conflicting property removed
+          disableDefaultUI: true,
+          zoomControl: false,
+          mapTypeControl: false,
+          scaleControl: true,
+          streetViewControl: false,
+          rotateControl: false,
+          fullscreenControl: false,
+          clickableIcons: false,
+          gestureHandling: "greedy",
+          restriction: {
+            latLngBounds: {
+              north: 5,
+              south: -5,
+              west: 33,
+              east: 42,
+            },
+            strictBounds: false,
+          },
+        })
 
-                mapInstanceRef.current = map
-                infoWindowRef.current = new google.maps.InfoWindow()
+        mapInstanceRef.current = map
+        infoWindowRef.current = new google.maps.InfoWindow()
 
-                setIsLoaded(true)
-                onMapReady?.(map)
-            } catch (error) {
-                console.error("Failed to load Google Maps:", error)
-                setLoadError("Failed to load map. Please check your connection.")
-            }
-        }
+        setIsLoaded(true)
+        onMapReady?.(map)
+      } catch (error) {
+        console.error("Failed to load Google Maps:", error)
+        setLoadError("Failed to load map. Please check your connection.")
+      }
+    }
 
-        initMap()
+    initMap()
 
-        return () => {
-            mounted = false
+    return () => {
+      mounted = false
 
-            // Cleanup markers on unmount to prevent weird state
-            if (vehicleMarkersRef.current) {
-                vehicleMarkersRef.current.forEach((marker) => {
-                    try { marker.map = null } catch (e) { }
-                })
-                vehicleMarkersRef.current.clear()
-            }
-            if (stageMarkersRef.current) {
-                stageMarkersRef.current.forEach((marker) => {
-                    try { marker.map = null } catch (e) { }
-                })
-                stageMarkersRef.current = []
-            }
-            if (userLocationMarkerRef.current) {
-                try { userLocationMarkerRef.current.map = null } catch (e) { }
-            }
-        }
-    }, [])
-
-    // Handle traffic layer
-    useEffect(() => {
-        if (!mapInstanceRef.current || !isLoaded) return
-
-        if (showTrafficLayer) {
-            if (!trafficLayerRef.current) {
-                trafficLayerRef.current = new google.maps.TrafficLayer()
-            }
-            trafficLayerRef.current.setMap(mapInstanceRef.current)
-        } else {
-            trafficLayerRef.current?.setMap(null)
-        }
-    }, [showTrafficLayer, isLoaded])
-
-    // Handle fly to location
-    useEffect(() => {
-        if (!mapInstanceRef.current || !isLoaded || !flyToLocation) return
-
-        mapInstanceRef.current.panTo({ lat: flyToLocation.lat, lng: flyToLocation.lng })
-        if (flyToLocation.zoom) {
-            mapInstanceRef.current.setZoom(flyToLocation.zoom)
-        }
-    }, [flyToLocation, isLoaded])
-
-    // Draw routes — clean stage-to-stage polylines
-    useEffect(() => {
-        if (!mapInstanceRef.current || !isLoaded || !showRouteLines) return
-
-        // Clear existing polylines
-        routePolylinesRef.current.forEach((p) => p.setMap(null))
-        routePolylinesRef.current = []
-
-        // Clear existing stage markers
-        stageMarkersRef.current.forEach((m) => {
-            try { m.map = null } catch (e) { }
+      // Cleanup markers on unmount to prevent weird state
+      if (vehicleMarkersRef.current) {
+        vehicleMarkersRef.current.forEach((marker) => {
+          try { marker.map = null } catch (e) { }
+        })
+        vehicleMarkersRef.current.clear()
+      }
+      if (stageMarkersRef.current) {
+        stageMarkersRef.current.forEach((marker) => {
+          try { marker.map = null } catch (e) { }
         })
         stageMarkersRef.current = []
+      }
+      if (userLocationMarkerRef.current) {
+        try { userLocationMarkerRef.current.map = null } catch (e) { }
+      }
+    }
+  }, [])
 
-        routes.forEach((route) => {
-            if (route.stages.length < 2) return
+  // Handle traffic layer
+  useEffect(() => {
+    if (!mapInstanceRef.current || !isLoaded) return
 
-            const isSelected = route.id === selectedRouteId
-            const isActive = route.isActive || isSelected
-            const path = route.stages.map((s) => ({ lat: s.lat, lng: s.lng }))
+    if (showTrafficLayer) {
+      if (!trafficLayerRef.current) {
+        trafficLayerRef.current = new google.maps.TrafficLayer()
+      }
+      trafficLayerRef.current.setMap(mapInstanceRef.current)
+    } else {
+      trafficLayerRef.current?.setMap(null)
+    }
+  }, [showTrafficLayer, isLoaded])
 
-            // Outer glow — soft wide band
-            if (isActive) {
-                const glowLine = new google.maps.Polyline({
-                    path,
-                    geodesic: true,
-                    strokeColor: route.color,
-                    strokeOpacity: 0.15,
-                    strokeWeight: 20,
-                    map: mapInstanceRef.current!,
-                    zIndex: 1,
-                })
-                routePolylinesRef.current.push(glowLine)
-            }
+  // Handle fly to location
+  useEffect(() => {
+    if (!mapInstanceRef.current || !isLoaded || !flyToLocation) return
 
-            // Main route line — dashed for inactive, solid for active
-            const mainLine = new google.maps.Polyline({
-                path,
-                geodesic: true,
-                strokeColor: route.color,
-                strokeOpacity: isActive ? 0 : 0.45,
-                strokeWeight: isActive ? 0 : 3,
-                map: mapInstanceRef.current!,
-                zIndex: 2,
-                icons: isActive ? [
-                    {
-                        icon: {
-                            path: "M 0,-0.5 0,0.5",
-                            strokeOpacity: 0.85,
-                            strokeColor: route.color,
-                            strokeWeight: 5,
-                            scale: 5,
-                        },
-                        offset: "0",
-                        repeat: "14px",
-                    },
-                    {
-                        icon: {
-                            path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
-                            scale: 3.5,
-                            fillColor: "#ffffff",
-                            fillOpacity: 0.8,
-                            strokeColor: route.color,
-                            strokeWeight: 1.5,
-                        },
-                        offset: "50px",
-                        repeat: "180px",
-                    },
-                ] : [
-                    {
-                        icon: {
-                            path: "M 0,-0.5 0,0.5",
-                            strokeOpacity: 0.4,
-                            strokeColor: route.color,
-                            strokeWeight: 3,
-                            scale: 4,
-                        },
-                        offset: "0",
-                        repeat: "12px",
-                    },
-                ],
+    mapInstanceRef.current.panTo({ lat: flyToLocation.lat, lng: flyToLocation.lng })
+    if (flyToLocation.zoom) {
+      mapInstanceRef.current.setZoom(flyToLocation.zoom)
+    }
+  }, [flyToLocation, isLoaded])
+
+  // Draw routes — road-following paths via Directions API
+  useEffect(() => {
+    if (!mapInstanceRef.current || !isLoaded || !showRouteLines) return
+
+    // Clear existing polylines
+    routePolylinesRef.current.forEach((p) => p.setMap(null))
+    routePolylinesRef.current = []
+
+    // Clear existing stage markers
+    stageMarkersRef.current.forEach((m) => {
+      try { m.map = null } catch (e) { }
+    })
+    stageMarkersRef.current = []
+
+    // Helper to draw a polyline with the correct styling
+    const drawRoutePolyline = (route: MapRoute, path: Array<{ lat: number; lng: number }>, isActive: boolean) => {
+      if (!mapInstanceRef.current) return
+
+      // Outer glow — soft wide band
+      if (isActive) {
+        const glowLine = new google.maps.Polyline({
+          path,
+          geodesic: false,
+          strokeColor: route.color,
+          strokeOpacity: 0.15,
+          strokeWeight: 20,
+          map: mapInstanceRef.current!,
+          zIndex: 1,
+        })
+        routePolylinesRef.current.push(glowLine)
+      }
+
+      // Main route line
+      const mainLine = new google.maps.Polyline({
+        path,
+        geodesic: false,
+        strokeColor: route.color,
+        strokeOpacity: isActive ? 0 : 0.45,
+        strokeWeight: isActive ? 0 : 3,
+        map: mapInstanceRef.current!,
+        zIndex: 2,
+        icons: isActive ? [
+          {
+            icon: {
+              path: "M 0,-0.5 0,0.5",
+              strokeOpacity: 0.85,
+              strokeColor: route.color,
+              strokeWeight: 5,
+              scale: 5,
+            },
+            offset: "0",
+            repeat: "14px",
+          },
+          {
+            icon: {
+              path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
+              scale: 3.5,
+              fillColor: "#ffffff",
+              fillOpacity: 0.8,
+              strokeColor: route.color,
+              strokeWeight: 1.5,
+            },
+            offset: "50px",
+            repeat: "180px",
+          },
+        ] : [
+          {
+            icon: {
+              path: "M 0,-0.5 0,0.5",
+              strokeOpacity: 0.4,
+              strokeColor: route.color,
+              strokeWeight: 3,
+              scale: 4,
+            },
+            offset: "0",
+            repeat: "12px",
+          },
+        ],
+      })
+      routePolylinesRef.current.push(mainLine)
+    }
+
+    routes.forEach((route) => {
+      if (route.stages.length < 2) return
+
+      const isSelected = route.id === selectedRouteId
+      const isActive = route.isActive || isSelected
+      const straightPath = route.stages.map((s) => ({ lat: s.lat, lng: s.lng }))
+
+      // Check if we already have a cached road path
+      const cachedPath = routePathsRef.current.get(route.id)
+      if (cachedPath) {
+        drawRoutePolyline(route, cachedPath, isActive)
+      } else {
+        // Draw straight lines immediately (placeholder)
+        drawRoutePolyline(route, straightPath, isActive)
+
+        // Fetch road-accurate path in background
+        const stageCoords = route.stages.map((s) => ({ lat: s.lat, lng: s.lng, name: s.name }))
+        getRouteDirections(route.id, stageCoords).then((directions) => {
+          if (directions && directions.path.length > 0 && mapInstanceRef.current) {
+            const roadPath = directions.path.map((p) => ({ lat: p.lat(), lng: p.lng() }))
+
+            // Cache the road path
+            routePathsRef.current.set(route.id, roadPath)
+
+            // Remove the old straight-line polylines for this route
+            // and redraw with the road path
+            routePolylinesRef.current.forEach((p) => p.setMap(null))
+            routePolylinesRef.current = []
+
+            // Redraw ALL routes with cached paths where available
+            routes.forEach((r) => {
+              if (r.stages.length < 2) return
+              const rIsSelected = r.id === selectedRouteId
+              const rIsActive = r.isActive || rIsSelected
+              const rPath = routePathsRef.current.get(r.id) || r.stages.map((s) => ({ lat: s.lat, lng: s.lng }))
+              drawRoutePolyline(r, rPath, rIsActive)
             })
-            routePolylinesRef.current.push(mainLine)
+          }
+        })
+      }
 
-            // Stage markers
-            if (showStageLabels) {
-                route.stages.forEach((stage, index) => {
-                    const markerContent = document.createElement("div")
-                    markerContent.innerHTML = createStageMarkerHtml(stage, index, route.stages.length, route.color)
+      // Stage markers
+      if (showStageLabels) {
+        route.stages.forEach((stage, index) => {
+          const markerContent = document.createElement("div")
+          markerContent.innerHTML = createStageMarkerHtml(stage, index, route.stages.length, route.color)
 
-                    const marker = new google.maps.marker.AdvancedMarkerElement({
-                        map: mapInstanceRef.current!,
-                        position: { lat: stage.lat, lng: stage.lng },
-                        content: markerContent,
-                        title: stage.name,
-                    })
+          const marker = new google.maps.marker.AdvancedMarkerElement({
+            map: mapInstanceRef.current!,
+            position: { lat: stage.lat, lng: stage.lng },
+            content: markerContent,
+            title: stage.name,
+          })
 
-                    marker.addListener("gmp-click", () => {
-                        if (infoWindowRef.current) {
-                            const isTerminal = stage.isTerminal || index === 0 || index === route.stages.length - 1
-                            infoWindowRef.current.setContent(`
+          marker.addListener("gmp-click", () => {
+            if (infoWindowRef.current) {
+              const isTerminal = stage.isTerminal || index === 0 || index === route.stages.length - 1
+              infoWindowRef.current.setContent(`
                               <div style="
                                 padding: 14px 16px;
                                 font-family: -apple-system, BlinkMacSystemFont, 'Inter', system-ui, sans-serif;
@@ -557,82 +598,82 @@ export function GoogleMap({
                                 </div>
                               </div>
                             `)
-                            infoWindowRef.current.open(mapInstanceRef.current!, marker)
-                        }
-                        onStageClick?.(stage, route.id)
-                    })
-
-                    stageMarkersRef.current.push(marker)
-                })
+              infoWindowRef.current.open(mapInstanceRef.current!, marker)
             }
+            onStageClick?.(stage, route.id)
+          })
+
+          stageMarkersRef.current.push(marker)
         })
-    }, [routes, selectedRouteId, showRouteLines, showStageLabels, isLoaded])
+      }
+    })
+  }, [routes, selectedRouteId, showRouteLines, showStageLabels, isLoaded])
 
-    // Update vehicle markers
-    useEffect(() => {
-        if (!mapInstanceRef.current || !isLoaded) return
+  // Update vehicle markers
+  useEffect(() => {
+    if (!mapInstanceRef.current || !isLoaded) return
 
-        const currentIds = new Set(vehicles.map((v) => v.id))
+    const currentIds = new Set(vehicles.map((v) => v.id))
 
-        // Remove markers for vehicles no longer present
-        vehicleMarkersRef.current.forEach((marker, id) => {
-            if (!currentIds.has(id)) {
-                try {
-                    marker.map = null
-                } catch (e) {
-                    console.warn("Error removing marker:", e)
-                }
-                vehicleMarkersRef.current.delete(id)
-                vehiclePositionsRef.current.delete(id)
-            }
+    // Remove markers for vehicles no longer present
+    vehicleMarkersRef.current.forEach((marker, id) => {
+      if (!currentIds.has(id)) {
+        try {
+          marker.map = null
+        } catch (e) {
+          console.warn("Error removing marker:", e)
+        }
+        vehicleMarkersRef.current.delete(id)
+        vehiclePositionsRef.current.delete(id)
+      }
+    })
+
+    // Update or add vehicle markers
+    vehicles.forEach((vehicle) => {
+      const isSelected = selectedVehicleId === vehicle.id
+      const existingMarker = vehicleMarkersRef.current.get(vehicle.id)
+      const prevPos = vehiclePositionsRef.current.get(vehicle.id)
+
+      const markerContent = document.createElement("div")
+      markerContent.innerHTML = createVehicleMarkerHtml(vehicle, isSelected)
+
+      if (existingMarker) {
+        // Update position with animation
+        if (enableAnimation && prevPos) {
+          animateMarker(existingMarker, prevPos, { lat: vehicle.lat, lng: vehicle.lng })
+        } else {
+          existingMarker.position = { lat: vehicle.lat, lng: vehicle.lng }
+        }
+        existingMarker.content = markerContent
+      } else {
+        // Create new marker
+        const marker = new google.maps.marker.AdvancedMarkerElement({
+          map: mapInstanceRef.current!,
+          position: { lat: vehicle.lat, lng: vehicle.lng },
+          content: markerContent,
+          title: vehicle.plateNumber,
+          zIndex: 1000,
         })
 
-        // Update or add vehicle markers
-        vehicles.forEach((vehicle) => {
-            const isSelected = selectedVehicleId === vehicle.id
-            const existingMarker = vehicleMarkersRef.current.get(vehicle.id)
-            const prevPos = vehiclePositionsRef.current.get(vehicle.id)
+        marker.addListener("gmp-click", () => {
+          const distanceText = vehicle.distanceFromUser !== undefined
+            ? vehicle.distanceFromUser < 1000
+              ? `${Math.round(vehicle.distanceFromUser)}m`
+              : `${(vehicle.distanceFromUser / 1000).toFixed(1)}km`
+            : ""
 
-            const markerContent = document.createElement("div")
-            markerContent.innerHTML = createVehicleMarkerHtml(vehicle, isSelected)
+          const vehicleEmoji = {
+            MATATU: "🚐", BUS: "🚌", BODA: "🏍️", TUK_TUK: "🛺",
+          }[vehicle.type] || "🚐"
 
-            if (existingMarker) {
-                // Update position with animation
-                if (enableAnimation && prevPos) {
-                    animateMarker(existingMarker, prevPos, { lat: vehicle.lat, lng: vehicle.lng })
-                } else {
-                    existingMarker.position = { lat: vehicle.lat, lng: vehicle.lng }
-                }
-                existingMarker.content = markerContent
-            } else {
-                // Create new marker
-                const marker = new google.maps.marker.AdvancedMarkerElement({
-                    map: mapInstanceRef.current!,
-                    position: { lat: vehicle.lat, lng: vehicle.lng },
-                    content: markerContent,
-                    title: vehicle.plateNumber,
-                    zIndex: 1000,
-                })
+          const ratingStars = vehicle.rating
+            ? Array.from({ length: 5 }, (_, i) =>
+              `<span style="color: ${i < Math.round(vehicle.rating!) ? '#fbbf24' : '#374151'}; font-size: 13px;">★</span>`
+            ).join('')
+            : ''
 
-                marker.addListener("gmp-click", () => {
-                    const distanceText = vehicle.distanceFromUser !== undefined
-                        ? vehicle.distanceFromUser < 1000
-                            ? `${Math.round(vehicle.distanceFromUser)}m`
-                            : `${(vehicle.distanceFromUser / 1000).toFixed(1)}km`
-                        : ""
-
-                    const vehicleEmoji = {
-                        MATATU: "🚐", BUS: "🚌", BODA: "🏍️", TUK_TUK: "🛺",
-                    }[vehicle.type] || "🚐"
-
-                    const ratingStars = vehicle.rating
-                        ? Array.from({ length: 5 }, (_, i) =>
-                            `<span style="color: ${i < Math.round(vehicle.rating!) ? '#fbbf24' : '#374151'}; font-size: 13px;">★</span>`
-                        ).join('')
-                        : ''
-
-                    if (infoWindowRef.current) {
-                        infoWindowRef.current.setContent(`
+          if (infoWindowRef.current) {
+            infoWindowRef.current.setContent(`
                           <div style="
                             padding: 0;
                             font-family: -apple-system, BlinkMacSystemFont, 'Inter', system-ui, sans-serif;
@@ -717,158 +758,158 @@ export function GoogleMap({
                             </div>
                           </div>
                         `)
-                        infoWindowRef.current.open(mapInstanceRef.current!, marker)
-                    }
-                    onVehicleClick?.(vehicle)
-                })
-
-                vehicleMarkersRef.current.set(vehicle.id, marker)
-            }
-
-            vehiclePositionsRef.current.set(vehicle.id, { lat: vehicle.lat, lng: vehicle.lng })
-        })
-    }, [vehicles, selectedVehicleId, onVehicleClick, enableAnimation, isLoaded])
-
-    // User location marker
-    useEffect(() => {
-        if (!mapInstanceRef.current || !isLoaded) return
-
-        // Clear existing
-        if (userLocationMarkerRef.current) {
-            try {
-                userLocationMarkerRef.current.map = null
-            } catch (e) {
-                console.warn("Error removing user marker:", e)
-            }
-        }
-        accuracyCircleRef.current?.setMap(null)
-        distanceRingsRef.current.forEach((r) => r.setMap(null))
-        distanceRingsRef.current = []
-
-        if (!showUserLocation || !userLocation) return
-
-        // User marker
-        const markerContent = document.createElement("div")
-        markerContent.innerHTML = createUserLocationMarkerHtml()
-
-        userLocationMarkerRef.current = new google.maps.marker.AdvancedMarkerElement({
-            map: mapInstanceRef.current,
-            position: { lat: userLocation.latitude, lng: userLocation.longitude },
-            content: markerContent,
-            zIndex: 2000,
+            infoWindowRef.current.open(mapInstanceRef.current!, marker)
+          }
+          onVehicleClick?.(vehicle)
         })
 
-        // Accuracy circle
-        if (userLocation.accuracy && userLocation.accuracy > 0) {
-            accuracyCircleRef.current = new google.maps.Circle({
-                map: mapInstanceRef.current,
-                center: { lat: userLocation.latitude, lng: userLocation.longitude },
-                radius: userLocation.accuracy,
-                fillColor: "#3b82f6",
-                fillOpacity: 0.1,
-                strokeColor: "#3b82f6",
-                strokeOpacity: 0.3,
-                strokeWeight: 1,
-            })
-        }
+        vehicleMarkersRef.current.set(vehicle.id, marker)
+      }
 
-        // Distance rings
-        if (showDistanceRings) {
-            const ringDistances = [500, 1000, 2000] // meters
-            const ringColors = ["#22c55e", "#eab308", "#ef4444"]
+      vehiclePositionsRef.current.set(vehicle.id, { lat: vehicle.lat, lng: vehicle.lng })
+    })
+  }, [vehicles, selectedVehicleId, onVehicleClick, enableAnimation, isLoaded])
 
-            ringDistances.forEach((distance, i) => {
-                const ring = new google.maps.Circle({
-                    map: mapInstanceRef.current!,
-                    center: { lat: userLocation.latitude, lng: userLocation.longitude },
-                    radius: distance,
-                    fillColor: "transparent",
-                    strokeColor: ringColors[i],
-                    strokeOpacity: 0.4,
-                    strokeWeight: 2,
-                    clickable: false,
-                })
-                distanceRingsRef.current.push(ring)
-            })
-        }
-    }, [userLocation, showUserLocation, showDistanceRings, isLoaded])
+  // User location marker
+  useEffect(() => {
+    if (!mapInstanceRef.current || !isLoaded) return
 
-    // Walking guidance path
-    useEffect(() => {
-        if (!mapInstanceRef.current || !isLoaded) return
+    // Clear existing
+    if (userLocationMarkerRef.current) {
+      try {
+        userLocationMarkerRef.current.map = null
+      } catch (e) {
+        console.warn("Error removing user marker:", e)
+      }
+    }
+    accuracyCircleRef.current?.setMap(null)
+    distanceRingsRef.current.forEach((r) => r.setMap(null))
+    distanceRingsRef.current = []
 
-        guidancePathRef.current?.setMap(null)
+    if (!showUserLocation || !userLocation) return
 
-        if (!showGuidancePath || !userLocation || !nearestStage) return
+    // User marker
+    const markerContent = document.createElement("div")
+    markerContent.innerHTML = createUserLocationMarkerHtml()
 
-        const path = [
-            { lat: userLocation.latitude, lng: userLocation.longitude },
-            { lat: nearestStage.stage.lat, lng: nearestStage.stage.lng },
-        ]
+    userLocationMarkerRef.current = new google.maps.marker.AdvancedMarkerElement({
+      map: mapInstanceRef.current,
+      position: { lat: userLocation.latitude, lng: userLocation.longitude },
+      content: markerContent,
+      zIndex: 2000,
+    })
 
-        guidancePathRef.current = new google.maps.Polyline({
-            path,
-            geodesic: true,
-            strokeColor: "#3b82f6",
-            strokeOpacity: 0,
-            strokeWeight: 4,
-            map: mapInstanceRef.current,
-            icons: [{
-                icon: {
-                    path: "M 0,-1 0,1",
-                    strokeOpacity: 1,
-                    strokeColor: "#3b82f6",
-                    scale: 3,
-                },
-                offset: "0",
-                repeat: "15px",
-            }],
+    // Accuracy circle
+    if (userLocation.accuracy && userLocation.accuracy > 0) {
+      accuracyCircleRef.current = new google.maps.Circle({
+        map: mapInstanceRef.current,
+        center: { lat: userLocation.latitude, lng: userLocation.longitude },
+        radius: userLocation.accuracy,
+        fillColor: "#3b82f6",
+        fillOpacity: 0.1,
+        strokeColor: "#3b82f6",
+        strokeOpacity: 0.3,
+        strokeWeight: 1,
+      })
+    }
+
+    // Distance rings
+    if (showDistanceRings) {
+      const ringDistances = [500, 1000, 2000] // meters
+      const ringColors = ["#22c55e", "#eab308", "#ef4444"]
+
+      ringDistances.forEach((distance, i) => {
+        const ring = new google.maps.Circle({
+          map: mapInstanceRef.current!,
+          center: { lat: userLocation.latitude, lng: userLocation.longitude },
+          radius: distance,
+          fillColor: "transparent",
+          strokeColor: ringColors[i],
+          strokeOpacity: 0.4,
+          strokeWeight: 2,
+          clickable: false,
         })
-    }, [userLocation, nearestStage, showGuidancePath, isLoaded])
+        distanceRingsRef.current.push(ring)
+      })
+    }
+  }, [userLocation, showUserLocation, showDistanceRings, isLoaded])
 
-    // Animation helper
-    function animateMarker(
-        marker: google.maps.marker.AdvancedMarkerElement,
-        from: { lat: number; lng: number },
-        to: { lat: number; lng: number },
-        duration: number = 800
-    ) {
-        const startTime = performance.now()
+  // Walking guidance path
+  useEffect(() => {
+    if (!mapInstanceRef.current || !isLoaded) return
 
-        function animate(currentTime: number) {
-            const elapsed = currentTime - startTime
-            const progress = Math.min(elapsed / duration, 1)
-            const eased = 1 - Math.pow(1 - progress, 3)
+    guidancePathRef.current?.setMap(null)
 
-            const lat = from.lat + (to.lat - from.lat) * eased
-            const lng = from.lng + (to.lng - from.lng) * eased
+    if (!showGuidancePath || !userLocation || !nearestStage) return
 
-            marker.position = { lat, lng }
+    const path = [
+      { lat: userLocation.latitude, lng: userLocation.longitude },
+      { lat: nearestStage.stage.lat, lng: nearestStage.stage.lng },
+    ]
 
-            if (progress < 1) {
-                requestAnimationFrame(animate)
-            }
-        }
+    guidancePathRef.current = new google.maps.Polyline({
+      path,
+      geodesic: true,
+      strokeColor: "#3b82f6",
+      strokeOpacity: 0,
+      strokeWeight: 4,
+      map: mapInstanceRef.current,
+      icons: [{
+        icon: {
+          path: "M 0,-1 0,1",
+          strokeOpacity: 1,
+          strokeColor: "#3b82f6",
+          scale: 3,
+        },
+        offset: "0",
+        repeat: "15px",
+      }],
+    })
+  }, [userLocation, nearestStage, showGuidancePath, isLoaded])
 
+  // Animation helper
+  function animateMarker(
+    marker: google.maps.marker.AdvancedMarkerElement,
+    from: { lat: number; lng: number },
+    to: { lat: number; lng: number },
+    duration: number = 800
+  ) {
+    const startTime = performance.now()
+
+    function animate(currentTime: number) {
+      const elapsed = currentTime - startTime
+      const progress = Math.min(elapsed / duration, 1)
+      const eased = 1 - Math.pow(1 - progress, 3)
+
+      const lat = from.lat + (to.lat - from.lat) * eased
+      const lng = from.lng + (to.lng - from.lng) * eased
+
+      marker.position = { lat, lng }
+
+      if (progress < 1) {
         requestAnimationFrame(animate)
+      }
     }
 
-    if (loadError) {
-        return (
-            <div className={cn("flex items-center justify-center bg-muted/30", className)}>
-                <div className="text-center p-4">
-                    <p className="text-destructive font-medium">{loadError}</p>
-                    <p className="text-sm text-muted-foreground mt-2">
-                        Please check your internet connection and try again.
-                    </p>
-                </div>
-            </div>
-        )
-    }
+    requestAnimationFrame(animate)
+  }
 
+  if (loadError) {
     return (
-        <>
-            <style jsx global>{`
+      <div className={cn("flex items-center justify-center bg-muted/30", className)}>
+        <div className="text-center p-4">
+          <p className="text-destructive font-medium">{loadError}</p>
+          <p className="text-sm text-muted-foreground mt-2">
+            Please check your internet connection and try again.
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <>
+      <style jsx global>{`
         /* ═══════════════════════════════════════════════════════════════════
            PREMIUM GOOGLE MAPS STYLES
         ═══════════════════════════════════════════════════════════════════ */
@@ -1137,25 +1178,25 @@ export function GoogleMap({
         }
             `}</style>
 
-            <div className={cn("relative w-full h-full isolate", className)}>
-                {/* Map Container - Managed by Google Maps */}
-                <div
-                    ref={mapRef}
-                    id="google-map-container"
-                    className="absolute inset-0 w-full h-full"
-                    style={{ background: mapStyle === 'dark' ? '#0f0f1a' : '#f8fafc' }}
-                />
+      <div className={cn("relative w-full h-full isolate", className)}>
+        {/* Map Container - Managed by Google Maps */}
+        <div
+          ref={mapRef}
+          id="google-map-container"
+          className="absolute inset-0 w-full h-full"
+          style={{ background: mapStyle === 'dark' ? '#0f0f1a' : '#f8fafc' }}
+        />
 
-                {/* Loading Grid - Managed by React */}
-                {!isLoaded && (
-                    <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
-                        <div className="flex flex-col items-center gap-3">
-                            <div className="w-10 h-10 border-4 border-primary/30 border-t-primary rounded-full animate-spin" />
-                            <p className="text-sm font-medium text-muted-foreground animate-pulse">Initializing Map...</p>
-                        </div>
-                    </div>
-                )}
+        {/* Loading Grid - Managed by React */}
+        {!isLoaded && (
+          <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+            <div className="flex flex-col items-center gap-3">
+              <div className="w-10 h-10 border-4 border-primary/30 border-t-primary rounded-full animate-spin" />
+              <p className="text-sm font-medium text-muted-foreground animate-pulse">Initializing Map...</p>
             </div>
-        </>
-    )
+          </div>
+        )}
+      </div>
+    </>
+  )
 }
