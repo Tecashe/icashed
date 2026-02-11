@@ -60,7 +60,7 @@ export function useVehicleProgress(
             const progress = calculateRouteProgress(position, route.stages, avgSpeed)
             if (!progress) continue
 
-            // Score based on proximity (lower is better)
+
             const score = progress.deviationDistance
 
             if (score < bestScore) {
