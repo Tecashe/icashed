@@ -263,14 +263,3 @@ export async function getDistanceMatrix(
 
     return results
 }
-
-/**
- * Clear the directions cache (useful if routes change)
- */
-export function clearDirectionsCache(routeId?: string) {
-    if (routeId) {
-        directionsCache.delete(routeId)
-    } else {
-        directionsCache.clear()
-    }
-}
