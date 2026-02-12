@@ -149,6 +149,8 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
         const seenIds = new Set<string>()
         routes.forEach(route => {
             route.stages?.forEach(stage => {
+                // Skip routing-only waypoints from search/display
+                if (stage.isWaypoint) return
                 if (!seenIds.has(stage.id)) {
                     seenIds.add(stage.id)
                     stages.push({
@@ -431,6 +433,7 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
                 lat: s.latitude,
                 lng: s.longitude,
                 isTerminal: s.isTerminal,
+                isWaypoint: s.isWaypoint || false,
                 order: s.order,
             })),
         }))

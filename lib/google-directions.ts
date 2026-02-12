@@ -89,6 +89,8 @@ export async function getRouteDirections(
                     origin: new google.maps.LatLng(from.lat, from.lng),
                     destination: new google.maps.LatLng(to.lat, to.lng),
                     travelMode: google.maps.TravelMode.DRIVING,
+                    avoidHighways: true,
+                    avoidTolls: true,
                 })
                 console.log(`[Directions] Segment ${i + 1} returned ${result.routes.length} routes`)
 

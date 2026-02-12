@@ -76,13 +76,14 @@ model Route {
 }
 
 model Stage {
-  id        String  @id @default(cuid())
-  name      String
-  routeId   String  @map("route_id")
-  latitude  Float
-  longitude Float
-  order     Int
+  id         String  @id @default(cuid())
+  name       String
+  routeId    String  @map("route_id")
+  latitude   Float
+  longitude  Float
+  order      Int
   isTerminal Boolean @default(false) @map("is_terminal")
+  isWaypoint Boolean @default(false) @map("is_waypoint")
 
   route             Route @relation(fields: [routeId], references: [id], onDelete: Cascade)
   waitingPassengers PassengerPresence[]

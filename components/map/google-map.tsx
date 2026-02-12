@@ -37,6 +37,7 @@ export interface MapStage {
   lat: number
   lng: number
   isTerminal: boolean
+  isWaypoint?: boolean
   order?: number
 }
 
@@ -544,11 +545,12 @@ export function GoogleMap({
         })
       }
 
-      // Stage markers
+      // Stage markers — only display real boarding stages, skip routing waypoints
       if (showStageLabels) {
-        route.stages.forEach((stage, index) => {
+        const displayStages = route.stages.filter(s => !s.isWaypoint)
+        displayStages.forEach((stage, index) => {
           const markerContent = document.createElement("div")
-          markerContent.innerHTML = createStageMarkerHtml(stage, index, route.stages.length, route.color)
+          markerContent.innerHTML = createStageMarkerHtml(stage, index, displayStages.length, route.color)
 
           const marker = new google.maps.marker.AdvancedMarkerElement({
             map: mapInstanceRef.current!,

@@ -21,6 +21,7 @@ interface StageData {
   latitude: number
   longitude: number
   isTerminal: boolean
+  isWaypoint?: boolean // routing-only anchor, not displayed as a stage
 }
 
 interface RouteData {
@@ -48,8 +49,12 @@ const PRODUCTION_ROUTES: RouteData[] = [
     color: "#EF4444", // Red
     stages: [
       { name: "Ronald Ngala / OTC", latitude: -1.2833, longitude: 36.8273, isTerminal: true },
+      // Waypoint: Force route via Thika Road service road, not express lanes
+      { name: "WP Muranga Road", latitude: -1.2750, longitude: 36.8320, isTerminal: false, isWaypoint: true },
       { name: "Pangani", latitude: -1.2669, longitude: 36.8364, isTerminal: false },
       { name: "Muthaiga Roundabout", latitude: -1.2567, longitude: 36.8389, isTerminal: false },
+      // Waypoint: Stay on service road past GSU
+      { name: "WP GSU Roundabout", latitude: -1.2425, longitude: 36.8450, isTerminal: false, isWaypoint: true },
       { name: "Safari Park Hotel", latitude: -1.2321, longitude: 36.8494, isTerminal: false },
       { name: "Kasarani Stadium", latitude: -1.2214, longitude: 36.8879, isTerminal: false },
       { name: "Roysambu", latitude: -1.2183, longitude: 36.8869, isTerminal: false },
@@ -141,12 +146,22 @@ const PRODUCTION_ROUTES: RouteData[] = [
     color: "#8B5CF6", // Purple
     stages: [
       { name: "Railways Bus Station", latitude: -1.2890, longitude: 36.8267, isTerminal: true },
+      // Waypoint: Force route via Uhuru Highway toward Langata Road junction
+      { name: "WP Uhuru Highway", latitude: -1.2950, longitude: 36.8240, isTerminal: false, isWaypoint: true },
       { name: "Nyayo Stadium", latitude: -1.3047, longitude: 36.8256, isTerminal: false },
+      // Waypoint: Force left onto Langata Road, NOT Mombasa Road or Expressway
+      { name: "WP Langata Road Junction", latitude: -1.3100, longitude: 36.8200, isTerminal: false, isWaypoint: true },
+      // Waypoint: Stay on Langata Road past T-Mall
+      { name: "WP Langata Road / T-Mall", latitude: -1.3120, longitude: 36.8050, isTerminal: false, isWaypoint: true },
       { name: "Carnivore Restaurant", latitude: -1.3136, longitude: 36.7944, isTerminal: false },
       { name: "Wilson Airport", latitude: -1.3216, longitude: 36.8159, isTerminal: false },
+      // Waypoint: Continue on Langata Road past Hardy
+      { name: "WP Hardy / Langata Rd", latitude: -1.3280, longitude: 36.7820, isTerminal: false, isWaypoint: true },
       { name: "Langata Cemetery", latitude: -1.3333, longitude: 36.7639, isTerminal: false },
       { name: "Kenya Wildlife Service (KWS)", latitude: -1.3428, longitude: 36.7522, isTerminal: false },
       { name: "Bomas of Kenya", latitude: -1.3458, longitude: 36.7456, isTerminal: false },
+      // Waypoint: Take Magadi Road toward Rongai, not Southern Bypass
+      { name: "WP Magadi Road Junction", latitude: -1.3500, longitude: 36.7480, isTerminal: false, isWaypoint: true },
       { name: "Galleria Mall", latitude: -1.3556, longitude: 36.7564, isTerminal: false },
       { name: "Tumaini Estate", latitude: -1.3667, longitude: 36.7472, isTerminal: false },
       { name: "Maasai Lodge", latitude: -1.3775, longitude: 36.7361, isTerminal: false },
@@ -164,10 +179,17 @@ const PRODUCTION_ROUTES: RouteData[] = [
     color: "#A855F7", // Fuchsia
     stages: [
       { name: "Railways Bus Station", latitude: -1.2890, longitude: 36.8267, isTerminal: true },
+      { name: "WP Uhuru Highway", latitude: -1.2950, longitude: 36.8240, isTerminal: false, isWaypoint: true },
       { name: "Nyayo Stadium", latitude: -1.3047, longitude: 36.8256, isTerminal: false },
+      { name: "WP Langata Road Junction", latitude: -1.3100, longitude: 36.8200, isTerminal: false, isWaypoint: true },
+      { name: "WP Langata Road / T-Mall", latitude: -1.3120, longitude: 36.8050, isTerminal: false, isWaypoint: true },
       { name: "Carnivore Restaurant", latitude: -1.3136, longitude: 36.7944, isTerminal: false },
+      { name: "WP Hardy / Langata Rd", latitude: -1.3280, longitude: 36.7820, isTerminal: false, isWaypoint: true },
       { name: "Bomas of Kenya", latitude: -1.3458, longitude: 36.7456, isTerminal: false },
+      { name: "WP Magadi Road Junction", latitude: -1.3500, longitude: 36.7480, isTerminal: false, isWaypoint: true },
       { name: "Ongata Rongai Town", latitude: -1.3958, longitude: 36.7444, isTerminal: false },
+      // Waypoint: Continue on Magadi Road toward Kiserian
+      { name: "WP Magadi Rd / Rimpa", latitude: -1.4030, longitude: 36.7400, isTerminal: false, isWaypoint: true },
       { name: "Rimpa", latitude: -1.4083, longitude: 36.7389, isTerminal: false },
       { name: "Kiserian Town", latitude: -1.4217, longitude: 36.6833, isTerminal: true },
     ],
@@ -187,13 +209,23 @@ const PRODUCTION_ROUTES: RouteData[] = [
     stages: [
       { name: "Railways Bus Station", latitude: -1.2890, longitude: 36.8267, isTerminal: true },
       { name: "Nyayo Stadium", latitude: -1.3047, longitude: 36.8256, isTerminal: false },
+      // Waypoint: Stay on Mombasa Road surface, not Expressway
+      { name: "WP Mombasa Rd / Bunyala", latitude: -1.3100, longitude: 36.8280, isTerminal: false, isWaypoint: true },
       { name: "Bellevue / GM", latitude: -1.3175, longitude: 36.8319, isTerminal: false },
       { name: "Cabanas / South B", latitude: -1.3233, longitude: 36.8353, isTerminal: false },
       { name: "General Motors (GM)", latitude: -1.3236, longitude: 36.8361, isTerminal: false },
+      // Waypoint: Continue on old Mombasa Road past GM
+      { name: "WP Old Mombasa Rd / GM", latitude: -1.3310, longitude: 36.8420, isTerminal: false, isWaypoint: true },
       { name: "Sameer Industrial Park", latitude: -1.3394, longitude: 36.8494, isTerminal: false },
+      // Waypoint: Stay on surface road past JKIA, not elevated interchange
+      { name: "WP Surface Rd / JKIA", latitude: -1.3380, longitude: 36.8780, isTerminal: false, isWaypoint: true },
       { name: "JKIA Interchange", latitude: -1.3375, longitude: 36.9064, isTerminal: false },
+      // Waypoint: Mombasa Road surface toward Mlolongo
+      { name: "WP Mombasa Rd / Mlolongo", latitude: -1.3600, longitude: 36.9300, isTerminal: false, isWaypoint: true },
       { name: "Mlolongo", latitude: -1.3803, longitude: 36.9475, isTerminal: false },
       { name: "Athi River / Mavoko", latitude: -1.4531, longitude: 36.9825, isTerminal: false },
+      // Waypoint: Namanga Road surface toward Kitengela
+      { name: "WP Namanga Rd", latitude: -1.4570, longitude: 36.9750, isTerminal: false, isWaypoint: true },
       { name: "EPZ / Export Processing Zone", latitude: -1.4603, longitude: 36.9697, isTerminal: false },
       { name: "Kitengela Town", latitude: -1.4731, longitude: 36.9611, isTerminal: true },
     ],
@@ -402,6 +434,7 @@ async function seedRoutes() {
             longitude: stage.longitude,
             order: index + 1,
             isTerminal: stage.isTerminal,
+            isWaypoint: stage.isWaypoint ?? false,
           })),
         },
       },
