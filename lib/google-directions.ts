@@ -48,14 +48,16 @@ const DISTANCE_MATRIX_CACHE_TTL = 30_000 // 30 seconds
 // ============================================================================
 
 /**
- * Get road-following route path by routing EACH CONSECUTIVE PAIR of stages.
+ * Get road-following route path using Google Directions WAYPOINTS.
  *
- * Why segment-by-segment?
- * When you route from Stage A → Stage Z with all intermediates as waypoints,
- * Google picks whatever optimal road it wants, which often doesn't match the
- * actual matatu route. By routing A→B, B→C, C→D separately, each segment is
- * short enough that Google follows the actual (and usually only) road between
- * them.
+ * Strategy:
+ * Instead of routing each A→B pair separately (which lets Google pick any road),
+ * we send ALL intermediate stages as Google Directions waypoints. This forces
+ * Google to route through every defined point in the correct order, following
+ * the actual roads matatus use.
+ *
+ * Google allows max 25 waypoints per request (origin + destination + 23 intermediates).
+ * For routes with more stages, we split into batches.
  *
  * Results are cached by routeId for the entire session.
  */
@@ -73,73 +75,79 @@ export async function getRouteDirections(
     try {
         console.log(`[Directions] Fetching road path for route ${routeId} with ${stages.length} stages...`)
         const directionsService = new google.maps.DirectionsService()
-        console.log(`[Directions] DirectionsService created successfully`)
 
         const allPath: google.maps.LatLng[] = []
         const allLegs: DirectionsResult["legs"] = []
 
-        // Route each consecutive pair: A→B, B→C, C→D, ...
-        for (let i = 0; i < stages.length - 1; i++) {
-            const from = stages[i]
-            const to = stages[i + 1]
+        // Split into batches of up to 25 total points (origin + destination + 23 waypoints)
+        const MAX_WAYPOINTS = 23
+        const batchSize = MAX_WAYPOINTS + 2 // origin + destination + waypoints
+        const batches: StageCoord[][] = []
+
+        for (let i = 0; i < stages.length; i += batchSize - 1) {
+            const end = Math.min(i + batchSize, stages.length)
+            batches.push(stages.slice(i, end))
+            if (end >= stages.length) break
+        }
+
+        console.log(`[Directions] Split into ${batches.length} batch(es)`)
+
+        for (let batchIdx = 0; batchIdx < batches.length; batchIdx++) {
+            const batch = batches[batchIdx]
+            const origin = batch[0]
+            const destination = batch[batch.length - 1]
+            const intermediates = batch.slice(1, -1)
 
             try {
-                console.log(`[Directions] Requesting segment ${i + 1}/${stages.length - 1}: ${from.name || 'unknown'} → ${to.name || 'unknown'}`)
-                const result = await directionsService.route({
-                    origin: new google.maps.LatLng(from.lat, from.lng),
-                    destination: new google.maps.LatLng(to.lat, to.lng),
+                console.log(`[Directions] Batch ${batchIdx + 1}/${batches.length}: ${origin.name || 'start'} → ${destination.name || 'end'} (${intermediates.length} waypoints)`)
+
+                const request: google.maps.DirectionsRequest = {
+                    origin: new google.maps.LatLng(origin.lat, origin.lng),
+                    destination: new google.maps.LatLng(destination.lat, destination.lng),
                     travelMode: google.maps.TravelMode.DRIVING,
                     avoidHighways: true,
                     avoidTolls: true,
-                })
-                console.log(`[Directions] Segment ${i + 1} returned ${result.routes.length} routes`)
-
-                if (result.routes.length > 0 && result.routes[0].legs.length > 0) {
-                    const leg = result.routes[0].legs[0]
-
-                    // Extract road-following points from this segment
-                    for (const step of leg.steps) {
-                        allPath.push(...step.path)
-                    }
-
-                    allLegs.push({
-                        distanceMeters: leg.distance?.value || 0,
-                        durationSeconds: leg.duration?.value || 0,
-                        startAddress: leg.start_address || from.name || "",
-                        endAddress: leg.end_address || to.name || "",
-                    })
-                } else {
-                    // Fallback: straight line for this segment
-                    allPath.push(
-                        new google.maps.LatLng(from.lat, from.lng),
-                        new google.maps.LatLng(to.lat, to.lng)
-                    )
-                    allLegs.push({
-                        distanceMeters: 0,
-                        durationSeconds: 0,
-                        startAddress: from.name || "",
-                        endAddress: to.name || "",
-                    })
+                    optimizeWaypoints: false, // Keep our exact order
+                    waypoints: intermediates.map((wp) => ({
+                        location: new google.maps.LatLng(wp.lat, wp.lng),
+                        stopover: true,
+                    })),
                 }
-            } catch (segmentError: any) {
-                // If one segment fails, fall back to straight line for that segment
-                console.error(`[Directions] ❌ SEGMENT FAILED: ${from.name} → ${to.name}:`, segmentError?.message || segmentError)
-                console.error(`[Directions] Error details:`, JSON.stringify(segmentError, null, 2))
-                allPath.push(
-                    new google.maps.LatLng(from.lat, from.lng),
-                    new google.maps.LatLng(to.lat, to.lng)
-                )
-                allLegs.push({
-                    distanceMeters: 0,
-                    durationSeconds: 0,
-                    startAddress: from.name || "",
-                    endAddress: to.name || "",
-                })
+
+                const result = await directionsService.route(request)
+
+                if (result.routes.length > 0) {
+                    const route = result.routes[0]
+                    for (const leg of route.legs) {
+                        // Extract road-following points
+                        for (const step of leg.steps) {
+                            allPath.push(...step.path)
+                        }
+                        allLegs.push({
+                            distanceMeters: leg.distance?.value || 0,
+                            durationSeconds: leg.duration?.value || 0,
+                            startAddress: leg.start_address || "",
+                            endAddress: leg.end_address || "",
+                        })
+                    }
+                } else {
+                    // Fallback: straight lines for this batch
+                    console.warn(`[Directions] No routes returned for batch ${batchIdx + 1}`)
+                    for (const stage of batch) {
+                        allPath.push(new google.maps.LatLng(stage.lat, stage.lng))
+                    }
+                }
+            } catch (batchError: any) {
+                console.error(`[Directions] ❌ Batch ${batchIdx + 1} failed:`, batchError?.message || batchError)
+                // Fallback: straight lines for this batch
+                for (const stage of batch) {
+                    allPath.push(new google.maps.LatLng(stage.lat, stage.lng))
+                }
             }
 
-            // Small delay between API calls to avoid rate limiting
-            if (i < stages.length - 2) {
-                await new Promise((r) => setTimeout(r, 200))
+            // Small delay between batch API calls
+            if (batchIdx < batches.length - 1) {
+                await new Promise((r) => setTimeout(r, 300))
             }
         }
 
@@ -165,6 +173,18 @@ export async function getRouteDirections(
         console.error(`[Directions] Go to: https://console.cloud.google.com/apis/library/directions-backend.googleapis.com`)
         return null
     }
+}
+
+/**
+ * Clear the directions cache. Useful when route data changes.
+ */
+export function clearDirectionsCache(routeId?: string) {
+    if (routeId) {
+        directionsCache.delete(routeId)
+    } else {
+        directionsCache.clear()
+    }
+    console.log(`[Directions] Cache cleared ${routeId ? `for route ${routeId}` : 'entirely'}`)
 }
 
 // ============================================================================
