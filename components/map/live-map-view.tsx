@@ -901,6 +901,7 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
         nextStageName,
         distanceFromUser,
         etaMinutes,
+        routeId: vehicleRoute?.id,
       }
     })
   }, [activeVehicles, routes, userLocation])

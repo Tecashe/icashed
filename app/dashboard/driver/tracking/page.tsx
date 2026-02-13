@@ -342,6 +342,7 @@ export default function DriverTrackingPage() {
     progress: progress?.progress,
     etaMinutes: progress?.etaToTerminus,
     nextStageName: progress?.nextStage?.name,
+    routeId: selectedRoute?.id,
   }] : []
 
   const mapRoutes: MapRoute[] = selectedRoute ? [{

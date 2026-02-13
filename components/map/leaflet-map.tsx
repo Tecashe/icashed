@@ -26,6 +26,7 @@
 //   originStageName?: string // Starting point of route
 //   destinationStageName?: string // End point of route
 //   distanceFromUser?: number // Distance in meters from passenger
+//   routeId?: string
 // }
 
 // export interface MapStage {

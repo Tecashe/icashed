@@ -29,6 +29,7 @@ export interface MapVehicle {
   distanceFromUser?: number
   rating?: number
   imageUrl?: string
+  routeId?: string
 }
 
 export interface MapStage {

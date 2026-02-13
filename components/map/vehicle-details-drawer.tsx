@@ -27,6 +27,7 @@ import {
     DrawerTitle,
 } from "@/components/ui/drawer"
 import { ReviewForm } from "@/components/reviews/review-form"
+import { ShareJourney } from "@/components/passenger/share-journey"
 import { cn } from "@/lib/utils"
 import type { MapVehicle } from "@/components/map/google-map"
 
@@ -348,9 +349,12 @@ export function VehicleDetailsDrawer({
 
                             {/* Action Buttons */}
                             <div className="grid grid-cols-2 gap-2">
-                                <Button variant="outline" className="gap-2" size="sm">
-                                    <Share2 className="h-4 w-4" /> Share
-                                </Button>
+                                <ShareJourney
+                                    vehicleId={selectedVehicle.id}
+                                    vehiclePlate={selectedVehicle.plateNumber}
+                                    routeId={selectedVehicle.routeId}
+                                    routeName={selectedVehicle.routeName}
+                                />
                                 <Button
                                     variant="outline"
                                     className="gap-2"
