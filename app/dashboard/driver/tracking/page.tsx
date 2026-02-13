@@ -210,7 +210,7 @@ export default function DriverTrackingPage() {
     [selectedVehicleId, selectedRouteId, direction]
   )
 
-  const startTracking = useCallback(() => {
+  const startTracking = useCallback(async () => {
     if (!selectedVehicleId) {
       toast.error("Select a vehicle first")
       return
@@ -221,6 +221,23 @@ export default function DriverTrackingPage() {
     }
     if (!navigator.geolocation) {
       toast.error("GPS not supported")
+      return
+    }
+
+    // Persist live state to DB (also enforces single-live)
+    try {
+      const res = await fetch(`/api/vehicles/${selectedVehicleId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isActive: true }),
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        toast.error(err.error || "Failed to go live")
+        return
+      }
+    } catch {
+      toast.error("Network error — could not go live")
       return
     }
 
@@ -241,14 +258,49 @@ export default function DriverTrackingPage() {
     )
   }, [selectedVehicleId, selectedRouteId, direction, vehicles, routeTerminals, sendPosition])
 
-  const stopTracking = useCallback(() => {
+  const stopTracking = useCallback(async () => {
     if (watchRef.current !== null) {
       navigator.geolocation.clearWatch(watchRef.current)
       watchRef.current = null
     }
     setTracking(false)
     toast.info("Tracking stopped", { description: `${updateCount} updates sent` })
-  }, [updateCount])
+
+    // Persist offline state to DB
+    if (selectedVehicleId) {
+      try {
+        await fetch(`/api/vehicles/${selectedVehicleId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ isActive: false }),
+        })
+      } catch {
+        // Best-effort — don't block UI
+      }
+    }
+  }, [updateCount, selectedVehicleId])
+
+  // Auto-resume tracking if vehicle is already live
+  const hasAutoResumed = useRef(false)
+  useEffect(() => {
+    if (hasAutoResumed.current) return
+    if (!selectedVehicleId || !selectedRouteId || !routeTerminals) return
+    const vehicle = vehicles.find(v => v.id === selectedVehicleId)
+    if (vehicle?.isActive && !tracking) {
+      hasAutoResumed.current = true
+      // Auto-start tracking since the vehicle is already marked live
+      setTracking(true)
+      setUpdateCount(0)
+      if (navigator.geolocation) {
+        watchRef.current = navigator.geolocation.watchPosition(
+          sendPosition,
+          (err) => toast.error("GPS Error", { description: err.message }),
+          { enableHighAccuracy: true, maximumAge: 5000, timeout: 30000 }
+        )
+        toast.info("Resumed tracking", { description: `${vehicle.plateNumber} was still live` })
+      }
+    }
+  }, [selectedVehicleId, selectedRouteId, routeTerminals, vehicles, tracking, sendPosition])
 
   useEffect(() => {
     return () => {

@@ -4,14 +4,93 @@ import { useMyVehicles } from "@/hooks/use-data"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Bus, Navigation, Star, Loader2, Plus, ChevronRight, Gauge } from "lucide-react"
+import { Switch } from "@/components/ui/switch"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
+import {
+  Bus,
+  Navigation,
+  Star,
+  Loader2,
+  Plus,
+  Pencil,
+  Trash2,
+  Gauge,
+  Radio,
+} from "lucide-react"
 import { VEHICLE_TYPE_LABELS } from "@/lib/constants"
 import Link from "next/link"
 import { cn } from "@/lib/utils"
+import { useState } from "react"
+import { toast } from "sonner"
 
 export default function DriverVehiclesPage() {
-  const { data, isLoading } = useMyVehicles()
+  const { data, isLoading, mutate } = useMyVehicles()
   const vehicles = data?.vehicles || []
+  const [togglingId, setTogglingId] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+
+  const handleToggleLive = async (vehicleId: string, currentlyActive: boolean) => {
+    setTogglingId(vehicleId)
+    try {
+      const res = await fetch(`/api/vehicles/${vehicleId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isActive: !currentlyActive }),
+      })
+
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || "Failed to toggle")
+      }
+
+      const vehicle = vehicles.find(v => v.id === vehicleId)
+      if (!currentlyActive) {
+        toast.success(`${vehicle?.plateNumber} is now LIVE 🟢`, {
+          description: "Other vehicles have been set offline.",
+        })
+      } else {
+        toast.info(`${vehicle?.plateNumber} is now offline`)
+      }
+
+      mutate()
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Failed to toggle vehicle"
+      toast.error(message)
+    } finally {
+      setTogglingId(null)
+    }
+  }
+
+  const handleDelete = async (vehicleId: string) => {
+    setDeletingId(vehicleId)
+    try {
+      const res = await fetch(`/api/vehicles/${vehicleId}`, { method: "DELETE" })
+
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || "Failed to delete")
+      }
+
+      const result = await res.json()
+      toast.success(`${result.plateNumber} has been removed`)
+      mutate()
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Failed to delete vehicle"
+      toast.error(message)
+    } finally {
+      setDeletingId(null)
+    }
+  }
 
   return (
     <div className="flex flex-col gap-5">
@@ -22,7 +101,7 @@ export default function DriverVehiclesPage() {
             My Vehicles
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Manage your fleet
+            Manage your fleet &middot; Only 1 vehicle can be live at a time
           </p>
         </div>
         <Button asChild size="lg" className="h-12 gap-2 px-4">
@@ -39,17 +118,34 @@ export default function DriverVehiclesPage() {
         </div>
       ) : vehicles.length > 0 ? (
         <div className="flex flex-col gap-3">
-          {vehicles.map((vehicle) => (
-            <Card key={vehicle.id} className="overflow-hidden">
-              <CardContent className="p-0">
-                <div className="flex items-stretch">
-                  {/* Main Content */}
-                  <div className="flex-1 p-4">
-                    {/* Header Row */}
+          {vehicles.map((vehicle) => {
+            const isToggling = togglingId === vehicle.id
+            const isDeleting = deletingId === vehicle.id
+
+            return (
+              <Card
+                key={vehicle.id}
+                className={cn(
+                  "overflow-hidden transition-all",
+                  vehicle.isActive && "ring-2 ring-primary/50 shadow-lg shadow-primary/10"
+                )}
+              >
+                <CardContent className="p-0">
+                  <div className="p-4">
+                    {/* Row 1: Vehicle Info + Live Toggle */}
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex items-center gap-3">
-                        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-primary/10">
-                          <Bus className="h-6 w-6 text-primary" />
+                        <div className={cn(
+                          "flex h-12 w-12 shrink-0 items-center justify-center rounded-xl",
+                          vehicle.isActive
+                            ? "bg-primary/20"
+                            : "bg-primary/10"
+                        )}>
+                          {vehicle.isActive ? (
+                            <Radio className="h-6 w-6 text-primary animate-pulse" />
+                          ) : (
+                            <Bus className="h-6 w-6 text-primary" />
+                          )}
                         </div>
                         <div>
                           <div className="flex items-center gap-2">
@@ -70,18 +166,29 @@ export default function DriverVehiclesPage() {
                           )}
                         </div>
                       </div>
-                      <Badge
-                        variant={vehicle.isActive ? "default" : "secondary"}
-                        className={cn(
-                          "shrink-0",
-                          vehicle.isActive && "bg-primary/10 text-primary hover:bg-primary/20"
+
+                      {/* Live Toggle */}
+                      <div className="flex flex-col items-end gap-1">
+                        <div className="flex items-center gap-2">
+                          <span className={cn(
+                            "text-xs font-semibold",
+                            vehicle.isActive ? "text-primary" : "text-muted-foreground"
+                          )}>
+                            {vehicle.isActive ? "LIVE" : "OFF"}
+                          </span>
+                          <Switch
+                            checked={vehicle.isActive}
+                            onCheckedChange={() => handleToggleLive(vehicle.id, vehicle.isActive)}
+                            disabled={isToggling || isDeleting}
+                          />
+                        </div>
+                        {isToggling && (
+                          <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
                         )}
-                      >
-                        {vehicle.isActive ? "Live" : "Offline"}
-                      </Badge>
+                      </div>
                     </div>
 
-                    {/* Info Badges */}
+                    {/* Row 2: Badges */}
                     <div className="mt-3 flex flex-wrap gap-2">
                       <Badge variant="outline" className="text-xs">
                         {VEHICLE_TYPE_LABELS[vehicle.type] || vehicle.type}
@@ -105,7 +212,7 @@ export default function DriverVehiclesPage() {
                       )}
                     </div>
 
-                    {/* Stats Row */}
+                    {/* Row 3: Stats */}
                     <div className="mt-4 flex items-center gap-4">
                       <div className="flex items-center gap-1.5">
                         <Star className="h-4 w-4 fill-amber-400 text-amber-400" />
@@ -128,27 +235,74 @@ export default function DriverVehiclesPage() {
                         </div>
                       )}
                     </div>
-                  </div>
 
-                  {/* Action Button */}
-                  <Link
-                    href="/dashboard/driver/tracking"
-                    className={cn(
-                      "flex w-16 shrink-0 flex-col items-center justify-center border-l border-border transition-colors",
-                      vehicle.isActive
-                        ? "bg-primary/5 text-primary hover:bg-primary/10"
-                        : "bg-muted/30 text-muted-foreground hover:bg-muted/50 hover:text-foreground"
-                    )}
-                  >
-                    <Navigation className="h-5 w-5" />
-                    <span className="mt-1 text-[10px] font-medium">
-                      {vehicle.isActive ? "View" : "Start"}
-                    </span>
-                  </Link>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+                    {/* Row 4: Action Buttons */}
+                    <div className="mt-4 flex items-center gap-2 border-t border-border pt-3">
+                      <Button
+                        asChild
+                        variant="outline"
+                        size="sm"
+                        className="flex-1 gap-1.5"
+                      >
+                        <Link href={`/dashboard/driver/vehicles/${vehicle.id}/edit`}>
+                          <Pencil className="h-3.5 w-3.5" />
+                          Edit
+                        </Link>
+                      </Button>
+
+                      <Button
+                        asChild
+                        variant={vehicle.isActive ? "default" : "outline"}
+                        size="sm"
+                        className="flex-1 gap-1.5"
+                      >
+                        <Link href="/dashboard/driver/tracking">
+                          <Navigation className="h-3.5 w-3.5" />
+                          {vehicle.isActive ? "Track" : "Start"}
+                        </Link>
+                      </Button>
+
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                            disabled={isDeleting}
+                          >
+                            {isDeleting ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Trash2 className="h-3.5 w-3.5" />
+                            )}
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Delete {vehicle.plateNumber}?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              This will permanently delete this vehicle and all its data
+                              including images, trip history, and reviews. This action
+                              cannot be undone.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction
+                              onClick={() => handleDelete(vehicle.id)}
+                              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            >
+                              Delete Vehicle
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )
+          })}
         </div>
       ) : (
         <Card>
