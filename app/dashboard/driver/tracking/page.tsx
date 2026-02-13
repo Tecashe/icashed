@@ -69,7 +69,7 @@ export default function DriverTrackingPage() {
 
   // Map settings
   const [mapStyle, setMapStyle] = useState<"dark" | "light" | "satellite">("dark")
-  const [showTrafficLayer, setShowTrafficLayer] = useState(false)
+  const [showTrafficLayer, setShowTrafficLayer] = useState(true)
 
   // Tracking state
   const [tracking, setTracking] = useState(false)

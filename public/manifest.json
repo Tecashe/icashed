@@ -1,0 +1,47 @@
+{
+    "name": "Radaa - Real-Time Public Transport",
+    "short_name": "Radaa",
+    "description": "See live routes, vehicles, and stages across Kenya. Make informed transport decisions based on real movement.",
+    "start_url": "/dashboard",
+    "display": "standalone",
+    "orientation": "portrait",
+    "background_color": "#0f1722",
+    "theme_color": "#10B981",
+    "categories": [
+        "transportation",
+        "navigation",
+        "travel"
+    ],
+    "lang": "en",
+    "dir": "ltr",
+    "scope": "/",
+    "icons": [
+        {
+            "src": "/icons/icon.svg",
+            "sizes": "any",
+            "type": "image/svg+xml",
+            "purpose": "any"
+        },
+        {
+            "src": "/icons/icon.svg",
+            "sizes": "any",
+            "type": "image/svg+xml",
+            "purpose": "maskable"
+        }
+    ],
+    "screenshots": [],
+    "shortcuts": [
+        {
+            "name": "Passenger Dashboard",
+            "short_name": "Passenger",
+            "url": "/dashboard/passenger",
+            "description": "Open passenger view with live map"
+        },
+        {
+            "name": "Driver Dashboard",
+            "short_name": "Driver",
+            "url": "/dashboard/driver",
+            "description": "Open driver tracking dashboard"
+        }
+    ]
+}

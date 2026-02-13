@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="96" fill="#10B981"/>
+  <g transform="translate(256,240)">
+    <!-- Bus body -->
+    <rect x="-90" y="-50" width="180" height="100" rx="20" fill="white"/>
+    <!-- Windows -->
+    <rect x="-70" y="-35" width="35" height="30" rx="6" fill="#10B981" opacity="0.6"/>
+    <rect x="-25" y="-35" width="35" height="30" rx="6" fill="#10B981" opacity="0.6"/>
+    <rect x="20" y="-35" width="35" height="30" rx="6" fill="#10B981" opacity="0.6"/>
+    <!-- Wheels -->
+    <circle cx="-50" cy="55" r="16" fill="#0D9668"/>
+    <circle cx="-50" cy="55" r="8" fill="white"/>
+    <circle cx="50" cy="55" r="16" fill="#0D9668"/>
+    <circle cx="50" cy="55" r="8" fill="white"/>
+    <!-- Headlights -->
+    <rect x="75" y="5" width="15" height="20" rx="5" fill="#FCD34D"/>
+  </g>
+  <!-- Location pin -->
+  <g transform="translate(370,120)">
+    <path d="M0-50 C-28-50-50-28-50 0 C-50 30 0 70 0 70 C0 70 50 30 50 0 C50-28 28-50 0-50Z" fill="white"/>
+    <circle cx="0" cy="-2" r="18" fill="#10B981"/>
+  </g>
+</svg>

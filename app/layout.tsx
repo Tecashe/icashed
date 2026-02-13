@@ -3,6 +3,7 @@ import type { Metadata, Viewport } from "next"
 import { Inter, Space_Grotesk } from "next/font/google"
 import { ThemeProvider } from "@/components/theme-provider"
 import { AuthProvider } from "@/lib/auth-context"
+import { RegisterSW } from "@/components/register-sw"
 import { Toaster } from "sonner"
 import "./globals.css"
 
@@ -34,6 +35,16 @@ export const metadata: Metadata = {
     "transit",
   ],
   authors: [{ name: "Radaa" }],
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "Radaa",
+  },
+  icons: {
+    icon: "/icons/icon.svg",
+    apple: "/icons/icon.svg",
+  },
   openGraph: {
     type: "website",
     locale: "en_KE",
@@ -71,6 +82,7 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           <AuthProvider>{children}</AuthProvider>
+          <RegisterSW />
           <Toaster
             position="top-right"
             richColors

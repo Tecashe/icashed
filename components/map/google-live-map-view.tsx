@@ -113,7 +113,7 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
     const [isHeaderCollapsed, setIsHeaderCollapsed] = useState(false)
 
     // Map feature toggles
-    const [showTrafficLayer, setShowTrafficLayer] = useState(false)
+    const [showTrafficLayer, setShowTrafficLayer] = useState(true)
     const [mapStyle, setMapStyle] = useState<"dark" | "light" | "satellite">("dark")
     const [showDistanceRings, setShowDistanceRings] = useState(true)
     const [filterBySpeed, setFilterBySpeed] = useState<"all" | "moving" | "stopped">("all")
