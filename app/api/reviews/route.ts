@@ -109,7 +109,7 @@ export async function GET(request: NextRequest) {
 
         const where = vehicleId ? { vehicleId } : {}
 
-        const [reviews, total] = await Promise.all([
+        const [reviews, total, avgResult, distResult] = await Promise.all([
             prisma.review.findMany({
                 where,
                 include: {
@@ -125,10 +125,27 @@ export async function GET(request: NextRequest) {
                 skip: (page - 1) * limit,
             }),
             prisma.review.count({ where }),
+            prisma.review.aggregate({
+                where,
+                _avg: { rating: true },
+            }),
+            prisma.review.groupBy({
+                by: ["rating"],
+                where,
+                _count: { rating: true },
+            }),
         ])
+
+        const distribution: Record<number, number> = {}
+        for (const d of distResult) {
+            distribution[d.rating] = d._count.rating
+        }
 
         return NextResponse.json({
             reviews,
+            total,
+            averageRating: avgResult._avg.rating || 0,
+            distribution,
             pagination: {
                 total,
                 page,
