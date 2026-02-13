@@ -1,0 +1,122 @@
+import { NextRequest, NextResponse } from "next/server"
+import { prisma } from "@/lib/db"
+
+// GET /api/journey/[code] — Public endpoint, no auth required
+// Returns the shared journey with live vehicle position
+export async function GET(
+    _request: NextRequest,
+    { params }: { params: Promise<{ code: string }> }
+) {
+    try {
+        const { code } = await params
+
+        const journey = await prisma.sharedJourney.findUnique({
+            where: { shareCode: code },
+            include: {
+                user: {
+                    select: { name: true },
+                },
+                vehicle: {
+                    select: {
+                        id: true,
+                        plateNumber: true,
+                        nickname: true,
+                        type: true,
+                        isActive: true,
+                        rating: true,
+                        images: { where: { isPrimary: true }, take: 1 },
+                        positions: { orderBy: { timestamp: "desc" }, take: 1 },
+                        routes: {
+                            include: {
+                                route: {
+                                    include: {
+                                        stages: { orderBy: { order: "asc" } },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+        })
+
+        if (!journey) {
+            return NextResponse.json({ error: "Journey not found" }, { status: 404 })
+        }
+
+        // Check if expired or inactive
+        const isExpired = new Date() > journey.expiresAt
+        const isInactive = !journey.isActive
+
+        if (isExpired || isInactive) {
+            return NextResponse.json({
+                journey: {
+                    shareCode: journey.shareCode,
+                    label: journey.label,
+                    status: "ended",
+                    endedAt: journey.expiresAt.toISOString(),
+                    sharerName: journey.user.name?.split(" ")[0] || "Someone",
+                    vehicle: {
+                        plateNumber: journey.vehicle.plateNumber,
+                        nickname: journey.vehicle.nickname,
+                    },
+                },
+            })
+        }
+
+        // Build active journey response
+        const position = journey.vehicle.positions[0] || null
+        const route = journey.routeId
+            ? journey.vehicle.routes.find(vr => vr.route.id === journey.routeId)?.route
+            : journey.vehicle.routes[0]?.route
+
+        return NextResponse.json({
+            journey: {
+                shareCode: journey.shareCode,
+                label: journey.label,
+                status: "active",
+                expiresAt: journey.expiresAt.toISOString(),
+                createdAt: journey.createdAt.toISOString(),
+                sharerName: journey.user.name?.split(" ")[0] || "Someone",
+                vehicle: {
+                    id: journey.vehicle.id,
+                    plateNumber: journey.vehicle.plateNumber,
+                    nickname: journey.vehicle.nickname,
+                    type: journey.vehicle.type,
+                    isLive: journey.vehicle.isActive,
+                    rating: journey.vehicle.rating,
+                    imageUrl: journey.vehicle.images[0]?.url || null,
+                    position: position
+                        ? {
+                            lat: position.latitude,
+                            lng: position.longitude,
+                            speed: position.speed,
+                            heading: position.heading,
+                            timestamp: position.timestamp.toISOString(),
+                        }
+                        : null,
+                },
+                route: route
+                    ? {
+                        id: route.id,
+                        name: route.name,
+                        color: route.color,
+                        origin: route.origin,
+                        destination: route.destination,
+                        stages: route.stages.map(s => ({
+                            id: s.id,
+                            name: s.name,
+                            lat: s.latitude,
+                            lng: s.longitude,
+                            order: s.order,
+                            isTerminal: s.isTerminal,
+                        })),
+                    }
+                    : null,
+            },
+        })
+    } catch (error) {
+        console.error("Get shared journey error:", error)
+        return NextResponse.json({ error: "Failed to fetch journey" }, { status: 500 })
+    }
+}

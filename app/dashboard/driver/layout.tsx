@@ -9,6 +9,7 @@ import {
   Navigation,
   Plus,
   Star,
+  Crown,
   MapPin,
   Menu,
   LogOut,
@@ -32,6 +33,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Vehicles", href: "/dashboard/driver/vehicles", icon: Bus },
   { label: "Go Live", href: "/dashboard/driver/tracking", icon: Navigation },
   { label: "Reviews", href: "/dashboard/driver/reviews", icon: Star },
+  { label: "Premium", href: "/dashboard/driver/premium", icon: Crown },
   { label: "Add", href: "/dashboard/driver/register", icon: Plus },
 ]
 

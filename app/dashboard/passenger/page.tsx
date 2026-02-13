@@ -3,6 +3,8 @@
 import { useAuth } from "@/lib/auth-context"
 import { useSavedRoutes, useMyReports } from "@/hooks/use-data"
 import { useRealtimePositions } from "@/hooks/use-realtime-positions"
+import useSWR from "swr"
+import { fetcher } from "@/lib/api-client"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -17,6 +19,9 @@ import {
   Bus,
   Clock,
   Search,
+  Share2,
+  Copy,
+  StopCircle,
 } from "lucide-react"
 import Link from "next/link"
 import { StageCheckin } from "@/components/passenger/stage-checkin"
@@ -27,11 +32,13 @@ export default function PassengerDashboardPage() {
   const { data: savedData, isLoading: savedLoading } = useSavedRoutes()
   const { positions, isRealtime } = useRealtimePositions()
   const { data: reportsData } = useMyReports()
+  const { data: sharesData, mutate: mutateShares } = useSWR<{ journeys: Array<{ id: string; shareCode: string; expiresAt: string; vehicle: { plateNumber: string } }> }>("/api/journey/share", fetcher)
 
   const savedRoutes = savedData?.savedRoutes || []
   const liveCount = positions.length
   const reports = reportsData?.reports || []
   const pendingReports = reports.filter((r) => r.status === "PENDING").length
+  const activeShare = sharesData?.journeys?.[0]
 
   const firstName = user?.name?.split(" ")[0] || "there"
 
@@ -75,6 +82,51 @@ export default function PassengerDashboardPage() {
 
       {/* Stage Check-in - I'm at a Stage */}
       <StageCheckin />
+
+      {/* Active Journey Share */}
+      {activeShare && (
+        <Card className="overflow-hidden border-green-500/30 bg-gradient-to-br from-green-500/5 to-emerald-500/10">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <span className="relative flex h-2.5 w-2.5">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
+                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-green-500" />
+              </span>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-foreground">
+                  Sharing {activeShare.vehicle.plateNumber}
+                </p>
+                <p className="text-xs text-muted-foreground truncate">
+                  {typeof window !== "undefined" ? `${window.location.origin}/journey/${activeShare.shareCode}` : `/journey/${activeShare.shareCode}`}
+                </p>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 shrink-0"
+                onClick={() => {
+                  navigator.clipboard.writeText(
+                    `${window.location.origin}/journey/${activeShare.shareCode}`
+                  )
+                }}
+              >
+                <Copy className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 shrink-0 text-destructive"
+                onClick={async () => {
+                  await fetch(`/api/journey/share?id=${activeShare.id}`, { method: "DELETE" })
+                  mutateShares()
+                }}
+              >
+                <StopCircle className="h-4 w-4" />
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Live Status Banner */}
       <div className="flex items-center justify-between rounded-2xl bg-muted p-4">

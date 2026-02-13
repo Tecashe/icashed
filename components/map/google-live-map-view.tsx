@@ -423,6 +423,10 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
             name: r.name,
             color: r.color,
             isActive: true,
+            routePath: r.routePath?.map((p: { latitude: number; longitude: number }) => ({
+                lat: p.latitude,
+                lng: p.longitude,
+            })),
             stages: r.stages.map((s) => ({
                 id: s.id,
                 name: s.name,

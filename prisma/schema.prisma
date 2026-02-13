@@ -29,6 +29,8 @@ model User {
   presenceRecords   PassengerPresence[]
   reviews           Review[]
   notifications     Notification[]
+  sharedJourneys    SharedJourney[]
+  premiumPayments   PremiumPayment[]
 
   @@map("users")
 }
@@ -126,6 +128,8 @@ model Vehicle {
   images        VehicleImage[]
   positions     VehiclePosition[]
   reviews       Review[]
+  sharedJourneys SharedJourney[]
+  premiumPayments PremiumPayment[]
 
   @@map("vehicles")
 }
@@ -295,4 +299,63 @@ model Review {
 
   @@index([vehicleId])
   @@map("reviews")
+}
+
+// ─── Journey Sharing ─────────────────────────────────────────
+
+model SharedJourney {
+  id        String   @id @default(cuid())
+  shareCode String   @unique @map("share_code")
+  userId    String   @map("user_id")
+  vehicleId String   @map("vehicle_id")
+  routeId   String?  @map("route_id")
+  label     String?  // e.g. "Mum's ride home"
+  isActive  Boolean  @default(true) @map("is_active")
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  @@index([shareCode])
+  @@index([userId, isActive])
+  @@map("shared_journeys")
+}
+
+// ─── Premium Payments ────────────────────────────────────────
+
+model PremiumPayment {
+  id                String        @id @default(cuid())
+  userId            String        @map("user_id")
+  vehicleId         String        @map("vehicle_id")
+  amount            Float
+  phone             String
+  mpesaReceiptNo    String?       @map("mpesa_receipt_no")
+  merchantRequestId String?       @map("merchant_request_id")
+  checkoutRequestId String?       @unique @map("checkout_request_id")
+  status            PaymentStatus @default(PENDING)
+  plan              PremiumPlan   @default(MONTHLY)
+  expiresAt         DateTime?     @map("expires_at")
+  createdAt         DateTime      @default(now()) @map("created_at")
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([vehicleId])
+  @@index([checkoutRequestId])
+  @@map("premium_payments")
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum PremiumPlan {
+  WEEKLY
+  MONTHLY
+  QUARTERLY
 }

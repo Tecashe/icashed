@@ -43,6 +43,7 @@ export async function GET(request: NextRequest) {
         where,
         include: {
           stages: { orderBy: { order: "asc" } },
+          routePath: { orderBy: { order: "asc" }, select: { latitude: true, longitude: true, order: true } },
           _count: { select: { vehicles: true } },
         },
         orderBy: { name: "asc" },

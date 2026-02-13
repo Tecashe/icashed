@@ -47,6 +47,7 @@ export interface MapRoute {
   color: string
   stages: MapStage[]
   isActive?: boolean
+  routePath?: Array<{ lat: number; lng: number }>
 }
 
 export interface UserLocationData {
@@ -511,7 +512,13 @@ export function GoogleMap({
       const isActive = route.isActive || isSelected
       const straightPath = route.stages.map((s) => ({ lat: s.lat, lng: s.lng }))
 
-      // Check if we already have a cached road path
+      // Priority 1: Use pre-recorded RoutePath data (actual road coordinates)
+      if (route.routePath && route.routePath.length >= 2) {
+        drawRoutePolyline(route, route.routePath, isActive)
+        return
+      }
+
+      // Priority 2: Use cached Google Directions path
       const cachedPath = routePathsRef.current.get(route.id)
       if (cachedPath) {
         drawRoutePolyline(route, cachedPath, isActive)
@@ -538,7 +545,10 @@ export function GoogleMap({
               if (r.stages.length < 2) return
               const rIsSelected = r.id === selectedRouteId
               const rIsActive = r.isActive || rIsSelected
-              const rPath = routePathsRef.current.get(r.id) || r.stages.map((s) => ({ lat: s.lat, lng: s.lng }))
+              // Prefer routePath, then cache, then straight line
+              const rPath = r.routePath && r.routePath.length >= 2
+                ? r.routePath
+                : routePathsRef.current.get(r.id) || r.stages.map((s) => ({ lat: s.lat, lng: s.lng }))
               drawRoutePolyline(r, rPath, rIsActive)
             })
           }

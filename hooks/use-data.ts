@@ -10,6 +10,7 @@ export interface RouteStage {
   longitude: number
   order: number
   isTerminal: boolean
+  isWaypoint?: boolean
 }
 
 export interface RouteData {
@@ -24,6 +25,7 @@ export interface RouteData {
   color: string
   createdAt: string
   stages: RouteStage[]
+  routePath?: Array<{ latitude: number; longitude: number; order: number }>
   _count: { vehicles: number }
 }
 

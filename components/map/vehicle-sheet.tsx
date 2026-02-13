@@ -31,6 +31,7 @@ import { StarRating } from "@/components/reviews/star-rating"
 import useSWR from "swr"
 import { fetcher } from "@/lib/api-client"
 import { formatDistanceToNow } from "date-fns"
+import { ShareJourney } from "@/components/passenger/share-journey"
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type ReviewData = { id: string; rating: number; comment: string | null; createdAt: string; tags?: string[]; user: { id: string; name: string | null; avatarUrl: string | null } }
@@ -523,6 +524,14 @@ export function VehicleSheet({ vehicle, progress, onClose, className }: VehicleS
                                 <Star className="h-4 w-4 fill-current" />
                                 Rate This Vehicle
                             </Button>
+
+                            {/* Journey Sharing */}
+                            <ShareJourney
+                                vehicleId={vehicle.vehicleId}
+                                vehiclePlate={vehicle.plateNumber}
+                                routeId={vehicle.routes[0]?.id}
+                                routeName={vehicle.routes[0]?.name}
+                            />
 
                             {/* Collapse hint */}
                             <button
