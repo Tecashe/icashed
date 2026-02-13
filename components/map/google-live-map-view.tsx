@@ -1,6 +1,9 @@
 "use client"
 
 import { useState, useMemo, useCallback, useEffect, useRef } from "react"
+import useSWR from "swr"
+import { fetcher } from "@/lib/api-client"
+import { formatDistanceToNow } from "date-fns"
 import {
     Loader2,
     MapPin,
@@ -12,6 +15,10 @@ import {
     Footprints,
     Clock,
     Star,
+    ImageIcon,
+    MessageSquare,
+    ChevronLeft as ChevronLeftIcon,
+    ChevronRight as ChevronRightIcon,
     ChevronRight,
     Maximize2,
     Minimize2,
@@ -46,6 +53,9 @@ import { findNearest, calculateDistance } from "@/lib/geo-utils"
 import { getDistanceMatrix, type DistanceMatrixEntry } from "@/lib/google-directions"
 import { cn } from "@/lib/utils"
 import { GoogleMap, type MapVehicle, type MapRoute, type UserLocationData, type NearestStageData, type MapStage } from "@/components/map/google-map"
+import { VehicleDetailsDrawer } from "@/components/map/vehicle-details-drawer"
+import { ReviewForm } from "@/components/reviews/review-form"
+import { StarRating } from "@/components/reviews/star-rating"
 import {
     Drawer,
     DrawerContent,
@@ -111,6 +121,8 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
     const [showVehicleDetails, setShowVehicleDetails] = useState(false)
     const [showMapSettings, setShowMapSettings] = useState(false)
     const [isHeaderCollapsed, setIsHeaderCollapsed] = useState(false)
+    const [showReviewForm, setShowReviewForm] = useState(false)
+    const [currentImageIndex, setCurrentImageIndex] = useState(0)
 
     // Map feature toggles
     const [showTrafficLayer, setShowTrafficLayer] = useState(true)
@@ -1077,119 +1089,17 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
             </div>
 
             {/* Vehicle Details Drawer */}
-            <Drawer open={showVehicleDetails} onOpenChange={setShowVehicleDetails}>
-                <DrawerContent className="max-h-[85vh]">
-                    <DrawerHeader className="border-b pb-3">
-                        <DrawerTitle className="flex items-center gap-2">
-                            <div className="h-4 w-4 rounded-full animate-pulse shadow-sm" style={{
-                                backgroundColor: selectedVehicle?.color
-                            }} />
-                            {selectedVehicle?.plateNumber}
-                            {selectedVehicle?.nickname && (
-                                <span className="text-sm text-muted-foreground font-normal">({selectedVehicle.nickname})</span>
-                            )}
-                        </DrawerTitle>
-                        <DrawerDescription>{selectedVehicle?.routeName}</DrawerDescription>
-                    </DrawerHeader>
-
-                    {selectedVehicle && (
-                        <div className="p-4 space-y-4 overflow-y-auto">
-                            <div className="flex items-center gap-2 p-3 bg-gradient-to-r from-green-500/15 to-green-600/10 border border-green-500/30 rounded-xl">
-                                <div className="h-3 w-3 rounded-full bg-green-500 animate-pulse" />
-                                <span className="text-sm font-semibold text-green-700 dark:text-green-400">
-                                    Live • {Math.round(selectedVehicle.speed)} km/h
-                                </span>
-                            </div>
-
-                            {selectedVehicle.distanceFromUser !== undefined && (
-                                <div className="grid grid-cols-2 gap-3">
-                                    <div className="p-4 bg-card border rounded-xl">
-                                        <p className="text-xs text-muted-foreground mb-1">Distance</p>
-                                        <p className="text-xl font-bold">
-                                            {selectedVehicle.distanceFromUser < 1000
-                                                ? `${Math.round(selectedVehicle.distanceFromUser)}m`
-                                                : `${(selectedVehicle.distanceFromUser / 1000).toFixed(1)}km`}
-                                        </p>
-                                    </div>
-                                    {selectedVehicle.etaMinutes !== undefined && (
-                                        <div className="p-4 bg-card border rounded-xl">
-                                            <p className="text-xs text-muted-foreground mb-1">ETA</p>
-                                            <p className="text-xl font-bold flex items-center gap-1">
-                                                <Clock className="h-5 w-5" />
-                                                {selectedVehicle.etaMinutes} min
-                                            </p>
-                                        </div>
-                                    )}
-                                </div>
-                            )}
-
-                            <div className="space-y-2">
-                                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Route</p>
-                                <div className="p-4 bg-card border rounded-xl space-y-2">
-                                    {selectedVehicle.originStageName && selectedVehicle.destinationStageName && (
-                                        <div className="flex items-center gap-2 text-sm">
-                                            <MapPin className="h-4 w-4 text-primary" />
-                                            <span className="truncate">{selectedVehicle.originStageName}</span>
-                                            <ArrowRight className="h-4 w-4 text-muted-foreground" />
-                                            <Navigation className="h-4 w-4 text-accent" />
-                                            <span className="truncate">{selectedVehicle.destinationStageName}</span>
-                                        </div>
-                                    )}
-                                    {selectedVehicle.nextStageName && (
-                                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                                            <span>Next stop:</span>
-                                            <span className="font-semibold text-foreground">{selectedVehicle.nextStageName}</span>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-
-                            <div className="space-y-2">
-                                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Reliability</p>
-                                <div className="p-4 bg-card border rounded-xl">
-                                    <div className="flex items-center justify-between">
-                                        <div className="flex items-center gap-0.5">
-                                            {Array.from({ length: 5 }).map((_, i) => (
-                                                <Star
-                                                    key={i}
-                                                    className={cn(
-                                                        "h-5 w-5",
-                                                        i < Math.floor(calculateReliabilityScore(selectedVehicle.id))
-                                                            ? "fill-yellow-400 text-yellow-400"
-                                                            : "text-muted"
-                                                    )}
-                                                />
-                                            ))}
-                                        </div>
-                                        <span className="text-lg font-bold">
-                                            {calculateReliabilityScore(selectedVehicle.id).toFixed(1)}
-                                        </span>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-2">
-                                <Button variant="outline" className="gap-2">
-                                    <Share2 className="h-4 w-4" /> Share
-                                </Button>
-                                <Button variant="outline" className="gap-2">
-                                    <Bookmark className="h-4 w-4" /> Save
-                                </Button>
-                            </div>
-
-                            <Button
-                                className="w-full gap-2"
-                                onClick={() => {
-                                    setFlyToLocation({ lat: selectedVehicle.lat, lng: selectedVehicle.lng, zoom: 16 })
-                                    setShowVehicleDetails(false)
-                                }}
-                            >
-                                <MapPin className="h-4 w-4" /> Center on Map
-                            </Button>
-                        </div>
-                    )}
-                </DrawerContent>
-            </Drawer>
+            <VehicleDetailsDrawer
+                selectedVehicle={selectedVehicle || null}
+                showVehicleDetails={showVehicleDetails}
+                setShowVehicleDetails={setShowVehicleDetails}
+                showReviewForm={showReviewForm}
+                setShowReviewForm={setShowReviewForm}
+                currentImageIndex={currentImageIndex}
+                setCurrentImageIndex={setCurrentImageIndex}
+                calculateReliabilityScore={calculateReliabilityScore}
+                setFlyToLocation={setFlyToLocation}
+            />
         </div>
     )
 }
