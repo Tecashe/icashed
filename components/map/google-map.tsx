@@ -611,9 +611,19 @@ export function GoogleMap({
     })
   }, [routes, selectedRouteId, showRouteLines, showStageLabels, isLoaded])
 
+  // Keep refs to latest vehicle data and callbacks for click handlers
+  const vehiclesDataRef = useRef<Map<string, MapVehicle>>(new Map())
+  const onVehicleClickRef = useRef(onVehicleClick)
+  onVehicleClickRef.current = onVehicleClick
+
   // Update vehicle markers
   useEffect(() => {
     if (!mapInstanceRef.current || !isLoaded) return
+
+    // Update the data ref so click handlers always get fresh data
+    const vehicleMap = new Map<string, MapVehicle>()
+    vehicles.forEach(v => vehicleMap.set(v.id, v))
+    vehiclesDataRef.current = vehicleMap
 
     const currentIds = new Set(vehicles.map((v) => v.id))
 
@@ -657,20 +667,25 @@ export function GoogleMap({
           zIndex: 1000,
         })
 
+        // Use ref lookup so click always gets latest vehicle data
+        const vehicleId = vehicle.id
         marker.addListener("gmp-click", () => {
-          const distanceText = vehicle.distanceFromUser !== undefined
-            ? vehicle.distanceFromUser < 1000
-              ? `${Math.round(vehicle.distanceFromUser)}m`
-              : `${(vehicle.distanceFromUser / 1000).toFixed(1)}km`
+          const freshVehicle = vehiclesDataRef.current.get(vehicleId)
+          if (!freshVehicle) return
+
+          const distanceText = freshVehicle.distanceFromUser !== undefined
+            ? freshVehicle.distanceFromUser < 1000
+              ? `${Math.round(freshVehicle.distanceFromUser)}m`
+              : `${(freshVehicle.distanceFromUser / 1000).toFixed(1)}km`
             : ""
 
           const vehicleEmoji = {
             MATATU: "🚐", BUS: "🚌", BODA: "🏍️", TUK_TUK: "🛺",
-          }[vehicle.type] || "🚐"
+          }[freshVehicle.type] || "🚐"
 
-          const ratingStars = vehicle.rating
+          const ratingStars = freshVehicle.rating
             ? Array.from({ length: 5 }, (_, i) =>
-              `<span style="color: ${i < Math.round(vehicle.rating!) ? '#fbbf24' : '#374151'}; font-size: 13px;">★</span>`
+              `<span style="color: ${i < Math.round(freshVehicle.rating!) ? '#fbbf24' : '#374151'}; font-size: 13px;">★</span>`
             ).join('')
             : ''
 
@@ -695,41 +710,41 @@ export function GoogleMap({
                               <div style="
                                 width: 48px; height: 48px;
                                 border-radius: 12px;
-                                background: linear-gradient(135deg, ${vehicle.color}20, ${vehicle.color}40);
+                                background: linear-gradient(135deg, ${freshVehicle.color}20, ${freshVehicle.color}40);
                                 display: flex; align-items: center; justify-content: center;
                                 font-size: 24px;
-                                border: 2px solid ${vehicle.color}50;
+                                border: 2px solid ${freshVehicle.color}50;
                                 flex-shrink: 0;
-                                ${vehicle.imageUrl ? `background-image: url(${vehicle.imageUrl}); background-size: cover; background-position: center; font-size: 0;` : ''}
-                              ">${vehicle.imageUrl ? '' : vehicleEmoji}</div>
+                                ${freshVehicle.imageUrl ? `background-image: url(${freshVehicle.imageUrl}); background-size: cover; background-position: center; font-size: 0;` : ''}
+                              ">${freshVehicle.imageUrl ? '' : vehicleEmoji}</div>
                               <div style="flex: 1; min-width: 0;">
                                 <div style="display: flex; align-items: center; gap: 6px;">
-                                  <span style="font-weight: 800; font-size: 16px; color: #f1f5f9; letter-spacing: 0.5px;">${vehicle.plateNumber}</span>
-                                  ${vehicle.isLive ? '<span style="width: 8px; height: 8px; border-radius: 50%; background: #22c55e; display: inline-block; box-shadow: 0 0 6px #22c55e80; animation: pulse 1.5s infinite;"></span>' : ''}
+                                  <span style="font-weight: 800; font-size: 16px; color: #f1f5f9; letter-spacing: 0.5px;">${freshVehicle.plateNumber}</span>
+                                  ${freshVehicle.isLive ? '<span style="width: 8px; height: 8px; border-radius: 50%; background: #22c55e; display: inline-block; box-shadow: 0 0 6px #22c55e80; animation: pulse 1.5s infinite;"></span>' : ''}
                                 </div>
-                                ${vehicle.nickname ? `<div style="font-size: 12px; color: #94a3b8; margin-top: 1px;">${vehicle.nickname}</div>` : ''}
-                                ${ratingStars ? `<div style="margin-top: 3px;">${ratingStars} <span style="color: #64748b; font-size: 11px;">${vehicle.rating?.toFixed(1)}</span></div>` : ''}
+                                ${freshVehicle.nickname ? `<div style="font-size: 12px; color: #94a3b8; margin-top: 1px;">${freshVehicle.nickname}</div>` : ''}
+                                ${ratingStars ? `<div style="margin-top: 3px;">${ratingStars} <span style="color: #64748b; font-size: 11px;">${freshVehicle.rating?.toFixed(1)}</span></div>` : ''}
                               </div>
                             </div>
 
                             <!-- Route info -->
-                            ${vehicle.originStageName && vehicle.destinationStageName ? `
+                            ${freshVehicle.originStageName && freshVehicle.destinationStageName ? `
                               <div style="
                                 padding: 8px 16px;
                                 display: flex; align-items: center; gap: 8px;
                                 font-size: 12px; color: #94a3b8;
                                 border-bottom: 1px solid rgba(255,255,255,0.06);
                               ">
-                                <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${vehicle.color};"></span>
-                                <span style="font-weight: 600; color: #cbd5e1;">${vehicle.originStageName}</span>
+                                <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${freshVehicle.color};"></span>
+                                <span style="font-weight: 600; color: #cbd5e1;">${freshVehicle.originStageName}</span>
                                 <span style="color: #475569;">→</span>
-                                <span style="font-weight: 600; color: #cbd5e1;">${vehicle.destinationStageName}</span>
+                                <span style="font-weight: 600; color: #cbd5e1;">${freshVehicle.destinationStageName}</span>
                               </div>
                             ` : ''}
 
                             <!-- Stats row -->
                             <div style="
-                              padding: 10px 16px 12px;
+                              padding: 10px 16px 8px;
                               display: flex; gap: 6px; flex-wrap: wrap;
                             ">
                               <div style="
@@ -738,7 +753,7 @@ export function GoogleMap({
                                 background: rgba(59, 130, 246, 0.12);
                                 font-size: 12px; font-weight: 600;
                                 color: #93c5fd;
-                              ">⚡ ${Math.round(vehicle.speed)} km/h</div>
+                              ">⚡ ${Math.round(freshVehicle.speed)} km/h</div>
                               ${distanceText ? `
                                 <div style="
                                   display: flex; align-items: center; gap: 5px;
@@ -748,21 +763,30 @@ export function GoogleMap({
                                   color: #6ee7b7;
                                 ">📍 ${distanceText}</div>
                               ` : ''}
-                              ${vehicle.etaMinutes ? `
+                              ${freshVehicle.etaMinutes ? `
                                 <div style="
                                   display: flex; align-items: center; gap: 5px;
                                   padding: 4px 10px; border-radius: 8px;
                                   background: rgba(249, 115, 22, 0.12);
                                   font-size: 12px; font-weight: 600;
                                   color: #fdba74;
-                                ">🕐 ${vehicle.etaMinutes} min</div>
+                                ">🕐 ${freshVehicle.etaMinutes} min</div>
                               ` : ''}
                             </div>
+
+                            <!-- Tap for details hint -->
+                            <div style="
+                              padding: 6px 16px 10px;
+                              font-size: 11px;
+                              color: #64748b;
+                              text-align: center;
+                              cursor: pointer;
+                            ">Tap for full details & reviews ↓</div>
                           </div>
                         `)
             infoWindowRef.current.open(mapInstanceRef.current!, marker)
           }
-          onVehicleClick?.(vehicle)
+          onVehicleClickRef.current?.(freshVehicle)
         })
 
         vehicleMarkersRef.current.set(vehicle.id, marker)
@@ -770,7 +794,7 @@ export function GoogleMap({
 
       vehiclePositionsRef.current.set(vehicle.id, { lat: vehicle.lat, lng: vehicle.lng })
     })
-  }, [vehicles, selectedVehicleId, onVehicleClick, enableAnimation, isLoaded])
+  }, [vehicles, selectedVehicleId, enableAnimation, isLoaded])
 
   // User location marker
   useEffect(() => {
