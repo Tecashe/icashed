@@ -28,6 +28,7 @@ model User {
   pushSubscriptions PushSubscription[]
   presenceRecords   PassengerPresence[]
   reviews           Review[]
+  notifications     Notification[]
 
   @@map("users")
 }
@@ -231,6 +232,34 @@ model PushSubscription {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("push_subscriptions")
+}
+
+// ─── In-App Notifications ────────────────────────────────────
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String           @map("user_id")
+  type      NotificationType
+  title     String
+  message   String
+  data      Json?            // { vehicleId, routeId, stageId, url }
+  isRead    Boolean          @default(false) @map("is_read")
+  createdAt DateTime         @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead])
+  @@index([userId, createdAt])
+  @@map("notifications")
+}
+
+enum NotificationType {
+  VEHICLE_APPROACHING
+  VEHICLE_DEPARTED
+  VEHICLE_ARRIVING
+  WAITING_PASSENGERS
+  REVIEW_RECEIVED
+  SYSTEM
 }
 
 // ─── Phase 2: Passenger Presence ─────────────────────────────

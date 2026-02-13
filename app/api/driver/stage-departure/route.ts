@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { getCurrentUser } from "@/lib/auth"
-import { sendPushNotification, type PushNotificationPayload } from "@/lib/web-push"
+import { createNotification } from "@/lib/notifications"
 
 /**
  * POST /api/driver/stage-departure
@@ -68,69 +68,52 @@ export async function POST(request: NextRequest) {
             },
         })
 
-        // Prepare notification based on action type
+        // Build notification details based on action type
+        let notificationType: "VEHICLE_APPROACHING" | "VEHICLE_DEPARTED" | "VEHICLE_ARRIVING"
+        let title: string
+        let getMessage: (stageName: string) => string
+
+        if (action === "departed") {
+            notificationType = "VEHICLE_DEPARTED"
+            title = "🚐 Vehicle Departed!"
+            getMessage = (stageName: string) =>
+                `${vehicle.plateNumber} has left ${stage.name} on ${stage.route.name}. Heading toward ${stageName}.`
+        } else if (action === "approaching" && etaMinutes) {
+            notificationType = "VEHICLE_APPROACHING"
+            title = "🚐 Vehicle Approaching!"
+            getMessage = (stageName: string) =>
+                `${vehicle.plateNumber} is ${etaMinutes} min from ${stageName}`
+        } else if (action === "arriving") {
+            notificationType = "VEHICLE_ARRIVING"
+            title = "🎉 Almost There!"
+            getMessage = (stageName: string) =>
+                `${vehicle.plateNumber} is arriving at ${stageName} NOW!`
+        } else {
+            return NextResponse.json({ success: true, notificationsSent: 0, waitingPassengers: waitingPassengers.length })
+        }
+
+        // Create notification for each unique waiting passenger
+        const uniqueUserIds = [...new Set(waitingPassengers.map((p) => p.user.id))]
         let notificationsSent = 0
 
-        for (const presence of waitingPassengers) {
-            for (const subscription of presence.user.pushSubscriptions) {
-                let payload: PushNotificationPayload
+        for (const userId of uniqueUserIds) {
+            const presence = waitingPassengers.find((p) => p.user.id === userId)
+            const passengerStageName = presence?.stage.name || stage.name
 
-                if (action === "departed") {
-                    // Vehicle has departed from a stage
-                    payload = {
-                        title: "🚐 Vehicle Departed!",
-                        body: `${vehicle.plateNumber} has left ${stage.name} on ${stage.route.name}`,
-                        icon: "/icons/icon-192x192.png",
-                        tag: `departure-${vehicleId}`,
-                        data: {
-                            url: "/dashboard/passenger/map",
-                            vehicleId,
-                            stageId,
-                        },
-                    }
-                } else if (action === "approaching" && etaMinutes) {
-                    // Vehicle is approaching (5 min away, etc.)
-                    payload = {
-                        title: "🚐 Vehicle Approaching!",
-                        body: `${vehicle.plateNumber} is ${etaMinutes} min from ${presence.stage.name}`,
-                        icon: "/icons/icon-192x192.png",
-                        tag: `eta-${vehicleId}`,
-                        data: {
-                            url: "/dashboard/passenger/map",
-                            vehicleId,
-                            stageId: presence.stageId,
-                        },
-                    }
-                } else if (action === "arriving") {
-                    // Vehicle is about to arrive (1 min or less)
-                    payload = {
-                        title: "🎉 Almost There!",
-                        body: `${vehicle.plateNumber} is arriving at ${presence.stage.name} NOW!`,
-                        icon: "/icons/icon-192x192.png",
-                        tag: `arriving-${vehicleId}`,
-                        data: {
-                            url: "/dashboard/passenger/map",
-                            vehicleId,
-                            stageId: presence.stageId,
-                        },
-                    }
-                } else {
-                    continue
-                }
+            const result = await createNotification({
+                userId,
+                type: notificationType,
+                title,
+                message: getMessage(passengerStageName),
+                data: {
+                    url: "/dashboard/passenger/map",
+                    vehicleId,
+                    stageId: presence?.stageId || stageId,
+                },
+                sendPush: true,
+            })
 
-                const sent = await sendPushNotification(
-                    {
-                        endpoint: subscription.endpoint,
-                        keys: {
-                            p256dh: subscription.p256dh,
-                            auth: subscription.auth,
-                        },
-                    },
-                    payload
-                )
-
-                if (sent) notificationsSent++
-            }
+            if (result) notificationsSent++
         }
 
         return NextResponse.json({

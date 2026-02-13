@@ -14,17 +14,26 @@ import {
     MessageSquare,
     ChevronUp,
     ChevronDown,
+    ChevronLeft,
+    ChevronRight,
     Target,
     Route,
     Clock,
+    ImageIcon,
+    User,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { LivePosition } from "@/hooks/use-data"
 import type { useVehicleProgress } from "@/hooks/use-vehicle-progress"
 import { VEHICLE_TYPE_LABELS } from "@/lib/constants"
 import { ReviewForm } from "@/components/reviews/review-form"
+import { StarRating } from "@/components/reviews/star-rating"
 import useSWR from "swr"
 import { fetcher } from "@/lib/api-client"
+import { formatDistanceToNow } from "date-fns"
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type ReviewData = { id: string; rating: number; comment: string | null; createdAt: string; tags?: string[]; user: { id: string; name: string | null; avatarUrl: string | null } }
 
 // Sheet states
 type SheetState = "hidden" | "peek" | "half" | "full"
@@ -43,6 +52,196 @@ const SHEET_HEIGHTS: Record<SheetState, string> = {
     full: "translate-y-[10%]",               // Full details
 }
 
+// ─── Image Carousel ──────────────────────────────────────────────
+function VehicleImageCarousel({ vehicleId }: { vehicleId: string }) {
+    const [currentIndex, setCurrentIndex] = useState(0)
+    const { data } = useSWR<{ images: { id: string; url: string; caption: string | null; isPrimary: boolean }[] }>(
+        `/api/vehicles/${vehicleId}/images`,
+        fetcher
+    )
+    const images = data?.images || []
+
+    useEffect(() => setCurrentIndex(0), [vehicleId])
+
+    if (images.length === 0) {
+        return (
+            <div className="flex items-center justify-center h-36 rounded-xl bg-muted/50 border border-dashed border-border">
+                <div className="flex flex-col items-center gap-1 text-muted-foreground">
+                    <ImageIcon className="h-8 w-8" />
+                    <span className="text-xs">No photos yet</span>
+                </div>
+            </div>
+        )
+    }
+
+    return (
+        <div className="relative rounded-xl overflow-hidden">
+            <div className="relative h-44 bg-black">
+                <img
+                    src={images[currentIndex].url}
+                    alt={images[currentIndex].caption || "Vehicle photo"}
+                    className="w-full h-full object-cover"
+                />
+                {/* Gradient overlay for text readability */}
+                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
+
+                {/* Caption */}
+                {images[currentIndex].caption && (
+                    <p className="absolute bottom-2 left-3 text-xs text-white/90 font-medium">
+                        {images[currentIndex].caption}
+                    </p>
+                )}
+
+                {/* Navigation arrows */}
+                {images.length > 1 && (
+                    <>
+                        <button
+                            onClick={(e) => { e.stopPropagation(); setCurrentIndex(i => i === 0 ? images.length - 1 : i - 1) }}
+                            className="absolute left-2 top-1/2 -translate-y-1/2 h-8 w-8 rounded-full bg-black/40 backdrop-blur flex items-center justify-center text-white hover:bg-black/60 transition-colors"
+                        >
+                            <ChevronLeft className="h-4 w-4" />
+                        </button>
+                        <button
+                            onClick={(e) => { e.stopPropagation(); setCurrentIndex(i => i === images.length - 1 ? 0 : i + 1) }}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 h-8 w-8 rounded-full bg-black/40 backdrop-blur flex items-center justify-center text-white hover:bg-black/60 transition-colors"
+                        >
+                            <ChevronRight className="h-4 w-4" />
+                        </button>
+                    </>
+                )}
+
+                {/* Dot indicators */}
+                {images.length > 1 && (
+                    <div className="absolute bottom-2 right-3 flex gap-1">
+                        {images.map((_, i) => (
+                            <button
+                                key={i}
+                                onClick={(e) => { e.stopPropagation(); setCurrentIndex(i) }}
+                                className={cn(
+                                    "h-1.5 rounded-full transition-all",
+                                    i === currentIndex ? "w-4 bg-white" : "w-1.5 bg-white/50"
+                                )}
+                            />
+                        ))}
+                    </div>
+                )}
+            </div>
+        </div>
+    )
+}
+
+// ─── Inline Rating Summary ──────────────────────────────────────
+function InlineRatingSummary({ reviews, avgRating }: { reviews: ReviewData[]; avgRating: number | null }) {
+    if (!avgRating || reviews.length === 0) return null
+
+    const ratingCounts = [5, 4, 3, 2, 1].map(
+        (r) => reviews.filter((review) => review.rating === r).length
+    )
+
+    return (
+        <div className="rounded-xl border border-border bg-muted/30 p-4">
+            <p className="text-xs font-semibold text-muted-foreground mb-3 flex items-center gap-1">
+                <Star className="h-3 w-3" /> Rating Overview
+            </p>
+            <div className="flex items-center gap-4">
+                <div className="text-center">
+                    <p className="text-3xl font-bold text-foreground">{avgRating.toFixed(1)}</p>
+                    <StarRating rating={Math.round(avgRating)} size="sm" readOnly />
+                    <p className="mt-1 text-[10px] text-muted-foreground">
+                        {reviews.length} review{reviews.length !== 1 ? "s" : ""}
+                    </p>
+                </div>
+                <div className="flex-1 space-y-1">
+                    {[5, 4, 3, 2, 1].map((stars, i) => (
+                        <div key={stars} className="flex items-center gap-1.5 text-[10px]">
+                            <span className="w-2 text-muted-foreground">{stars}</span>
+                            <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                                <div
+                                    className="h-full bg-amber-400 rounded-full transition-all"
+                                    style={{ width: `${reviews.length > 0 ? (ratingCounts[i] / reviews.length) * 100 : 0}%` }}
+                                />
+                            </div>
+                            <span className="w-3 text-muted-foreground text-right">{ratingCounts[i]}</span>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        </div>
+    )
+}
+
+// ─── Inline Reviews ─────────────────────────────────────────────
+function InlineReviews({ reviews }: { reviews: ReviewData[] }) {
+    if (reviews.length === 0) {
+        return (
+            <div className="flex flex-col items-center py-4 text-center rounded-xl border border-dashed border-border">
+                <MessageSquare className="h-8 w-8 text-muted-foreground/30" />
+                <p className="mt-2 text-sm text-muted-foreground">No reviews yet</p>
+                <p className="text-xs text-muted-foreground/70">Be the first to share your experience!</p>
+            </div>
+        )
+    }
+
+    return (
+        <div>
+            <p className="text-xs font-semibold text-muted-foreground mb-2 flex items-center gap-1">
+                <MessageSquare className="h-3 w-3" /> Recent Reviews
+            </p>
+            <div className="space-y-2">
+                {reviews.slice(0, 3).map((review) => {
+                    const initials = review.user.name
+                        ?.split(" ")
+                        .map((n) => n[0])
+                        .join("")
+                        .toUpperCase()
+                        .slice(0, 2) || "?"
+
+                    return (
+                        <div key={review.id} className="rounded-xl border border-border bg-muted/20 p-3">
+                            <div className="flex items-start gap-2.5">
+                                {/* Avatar */}
+                                <div className="flex-shrink-0 h-8 w-8 rounded-full bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center overflow-hidden">
+                                    {review.user.avatarUrl ? (
+                                        <img src={review.user.avatarUrl} alt="" className="h-full w-full object-cover" />
+                                    ) : (
+                                        <span className="text-[10px] font-bold text-foreground/70">{initials}</span>
+                                    )}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex items-center justify-between gap-1">
+                                        <p className="text-xs font-medium text-foreground truncate">
+                                            {review.user.name || "Anonymous"}
+                                        </p>
+                                        <span className="text-[10px] text-muted-foreground shrink-0">
+                                            {formatDistanceToNow(new Date(review.createdAt), { addSuffix: true })}
+                                        </span>
+                                    </div>
+                                    <StarRating rating={review.rating} size="sm" readOnly className="mt-0.5" />
+                                    {review.comment && (
+                                        <p className="mt-1 text-xs text-foreground/80 leading-relaxed line-clamp-2">
+                                            {review.comment}
+                                        </p>
+                                    )}
+                                    {review.tags && review.tags.length > 0 && (
+                                        <div className="flex flex-wrap gap-1 mt-1.5">
+                                            {review.tags.slice(0, 3).map((tag) => (
+                                                <Badge key={tag} variant="secondary" className="text-[9px] h-4 px-1.5">
+                                                    {tag.replace(/_/g, " ")}
+                                                </Badge>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )
+                })}
+            </div>
+        </div>
+    )
+}
+
+// ─── Main Vehicle Sheet ─────────────────────────────────────────
 export function VehicleSheet({ vehicle, progress, onClose, className }: VehicleSheetProps) {
     const [sheetState, setSheetState] = useState<SheetState>("hidden")
     const [showReviewForm, setShowReviewForm] = useState(false)
@@ -50,14 +249,14 @@ export function VehicleSheet({ vehicle, progress, onClose, className }: VehicleS
     const startYRef = useRef(0)
     const currentYRef = useRef(0)
 
-    // Fetch vehicle rating
-    const { data: reviewsData } = useSWR(
+    // Fetch vehicle reviews
+    const { data: reviewsData, mutate: mutateReviews } = useSWR(
         vehicle ? `/api/reviews?vehicleId=${vehicle.vehicleId}&limit=5` : null,
         fetcher
     )
-    const recentReviews = reviewsData?.reviews || []
+    const recentReviews: ReviewData[] = reviewsData?.reviews || []
     const avgRating = recentReviews.length > 0
-        ? recentReviews.reduce((sum: number, r: { rating: number }) => sum + r.rating, 0) / recentReviews.length
+        ? recentReviews.reduce((sum: number, r: ReviewData) => sum + r.rating, 0) / recentReviews.length
         : null
 
     // Update sheet state when vehicle changes
@@ -272,6 +471,9 @@ export function VehicleSheet({ vehicle, progress, onClose, className }: VehicleS
                     {/* ─── FULL STATE: All Details ────────────────────────────── */}
                     {sheetState === "full" && (
                         <div className="mt-4 space-y-4 max-h-[40vh] overflow-y-auto">
+                            {/* Vehicle Images Carousel */}
+                            <VehicleImageCarousel vehicleId={vehicle.vehicleId} />
+
                             {/* Vehicle Info */}
                             <div className="flex flex-wrap gap-2">
                                 <Badge variant="secondary">
@@ -307,13 +509,18 @@ export function VehicleSheet({ vehicle, progress, onClose, className }: VehicleS
                                 </div>
                             </div>
 
+                            {/* Inline Rating Summary */}
+                            <InlineRatingSummary reviews={recentReviews} avgRating={avgRating} />
+
+                            {/* Recent Reviews */}
+                            <InlineReviews reviews={recentReviews} />
+
                             {/* Rate Button */}
                             <Button
-                                variant="outline"
-                                className="w-full gap-2"
+                                className="w-full gap-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white shadow-lg"
                                 onClick={() => setShowReviewForm(true)}
                             >
-                                <MessageSquare className="h-4 w-4" />
+                                <Star className="h-4 w-4 fill-current" />
                                 Rate This Vehicle
                             </Button>
 
@@ -337,6 +544,7 @@ export function VehicleSheet({ vehicle, progress, onClose, className }: VehicleS
                     plateNumber={vehicle.plateNumber}
                     isOpen={showReviewForm}
                     onClose={() => setShowReviewForm(false)}
+                    onSuccess={() => mutateReviews()}
                 />
             )}
         </>

@@ -12,9 +12,15 @@ import {
   type VehicleApproachingPayload,
 } from "@/lib/pusher"
 import { calculateDistance, calculateETA } from "@/lib/geo-utils"
+import { createNotification } from "@/lib/notifications"
 
 // Approach threshold in meters
 const APPROACH_THRESHOLD = 500
+
+// Dedup cache: prevent sending the same notification within 5 minutes
+// Key: `${vehicleId}-${stageId}`, Value: timestamp of last notification
+const notificationDedup = new Map<string, number>()
+const DEDUP_TTL = 5 * 60 * 1000 // 5 minutes
 
 // POST /api/driver/position - Update vehicle position (authenticated driver)
 export async function POST(request: NextRequest) {
@@ -138,14 +144,23 @@ async function checkApproachingStages(
         if (distance <= APPROACH_THRESHOLD) {
           // Check if there are waiting passengers at this stage
           const now = new Date()
-          const waitingPassengers = await prisma.passengerPresence.count({
+          const waitingPassengers = await prisma.passengerPresence.findMany({
             where: {
               stageId: stage.id,
               expiresAt: { gt: now },
             },
+            select: { userId: true },
           })
 
-          if (waitingPassengers > 0) {
+          if (waitingPassengers.length > 0) {
+            // Dedup check — don't re-notify if we already did within 5 min
+            const dedupKey = `${vehicle.id}-${stage.id}`
+            const lastNotified = notificationDedup.get(dedupKey)
+            if (lastNotified && Date.now() - lastNotified < DEDUP_TTL) {
+              continue
+            }
+            notificationDedup.set(dedupKey, Date.now())
+
             // Calculate ETA
             const etaMinutes = speed > 0
               ? Math.ceil((distance / 1000) / speed * 60)
@@ -174,6 +189,24 @@ async function checkApproachingStages(
             pusherServer
               .trigger(getStageChannel(stage.id), EVENTS.VEHICLE_APPROACHING, approachPayload)
               .catch((err) => console.error("Stage notification error:", err))
+
+            // Create persistent in-app notifications + push for each waiting passenger
+            const uniqueUserIds = [...new Set(waitingPassengers.map((p) => p.userId))]
+            for (const passengerId of uniqueUserIds) {
+              createNotification({
+                userId: passengerId,
+                type: "VEHICLE_APPROACHING",
+                title: "🚐 Vehicle Approaching!",
+                message: `${vehicle.plateNumber} is ${etaMinutes} min from ${stage.name} on ${route.name}`,
+                data: {
+                  url: "/dashboard/passenger/map",
+                  vehicleId: vehicle.id,
+                  routeId: route.id,
+                  stageId: stage.id,
+                },
+                sendPush: true,
+              }).catch((err) => console.error("Notification create error:", err))
+            }
           }
         }
       }
