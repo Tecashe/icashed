@@ -1,9 +1,6 @@
 "use client"
 
 import { useState, useMemo, useCallback, useEffect, useRef } from "react"
-import useSWR from "swr"
-import { fetcher } from "@/lib/api-client"
-import { formatDistanceToNow } from "date-fns"
 import {
     Loader2,
     MapPin,
@@ -15,10 +12,6 @@ import {
     Footprints,
     Clock,
     Star,
-    ImageIcon,
-    MessageSquare,
-    ChevronLeft as ChevronLeftIcon,
-    ChevronRight as ChevronRightIcon,
     ChevronRight,
     Maximize2,
     Minimize2,
@@ -54,15 +47,6 @@ import { getDistanceMatrix, type DistanceMatrixEntry } from "@/lib/google-direct
 import { cn } from "@/lib/utils"
 import { GoogleMap, type MapVehicle, type MapRoute, type UserLocationData, type NearestStageData, type MapStage } from "@/components/map/google-map"
 import { VehicleDetailsDrawer } from "@/components/map/vehicle-details-drawer"
-import { ReviewForm } from "@/components/reviews/review-form"
-import { StarRating } from "@/components/reviews/star-rating"
-import {
-    Drawer,
-    DrawerContent,
-    DrawerDescription,
-    DrawerHeader,
-    DrawerTitle,
-} from "@/components/ui/drawer"
 import {
     Popover,
     PopoverContent,
