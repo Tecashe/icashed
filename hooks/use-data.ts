@@ -137,6 +137,7 @@ export interface LivePosition {
   nickname: string | null
   type: string
   isPremium: boolean
+  imageUrl?: string | null
   position: VehiclePosition
   routes: { id: string; name: string; color: string }[]
 }

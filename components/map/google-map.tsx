@@ -221,13 +221,18 @@ function createVehicleMarkerHtml(vehicle: MapVehicle, isSelected: boolean): stri
     TUK_TUK: "🛺",
   }[vehicle.type] || "🚐"
 
+  // If vehicle has an uploaded photo, show it in the marker body; otherwise use emoji
+  const bodyContent = vehicle.imageUrl
+    ? `<img src="${vehicle.imageUrl}" alt="${vehicle.plateNumber}" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%;" />`
+    : `<span class="gmap-vehicle-emoji">${vehicleEmoji}</span>`
+
   return `
     <div class="gmap-vehicle-marker ${isLive ? 'gmap-vehicle-live' : ''} ${isSelected ? 'gmap-vehicle-selected' : ''}" 
          style="--vehicle-color: ${vehicle.color}; transform: rotate(${vehicle.heading}deg);">
       <div class="gmap-vehicle-pulse-ring"></div>
       <div class="gmap-vehicle-pulse-ring gmap-vehicle-pulse-ring-2"></div>
-      <div class="gmap-vehicle-body" style="width: ${size}px; height: ${size}px; background: linear-gradient(135deg, ${vehicle.color}, ${adjustColor(vehicle.color, -20)});">
-        <span class="gmap-vehicle-emoji">${vehicleEmoji}</span>
+      <div class="gmap-vehicle-body" style="width: ${size}px; height: ${size}px; background: ${vehicle.imageUrl ? '#1a1a2e' : `linear-gradient(135deg, ${vehicle.color}, ${adjustColor(vehicle.color, -20)})`}; overflow: hidden;">
+        ${bodyContent}
       </div>
       ${isMoving ? `<div class="gmap-vehicle-speed">${Math.round(vehicle.speed)}</div>` : ''}
       ${isSelected ? '<div class="gmap-vehicle-selected-ring"></div>' : ''}

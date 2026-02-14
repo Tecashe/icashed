@@ -13,6 +13,7 @@ import {
 } from "@/lib/pusher"
 import { calculateDistance, calculateETA } from "@/lib/geo-utils"
 import { createNotification } from "@/lib/notifications"
+import { cacheVehiclePosition, setDriverOnline } from "@/lib/redis"
 
 // Approach threshold in meters
 const APPROACH_THRESHOLD = 500
@@ -78,6 +79,24 @@ export async function POST(request: NextRequest) {
     const position = await prisma.vehiclePosition.create({
       data: { vehicleId, latitude, longitude, speed, heading },
     })
+
+    // ─── Cache in Redis (fire-and-forget) ───────────────────────
+    cacheVehiclePosition({
+      vehicleId: vehicle.id,
+      plateNumber: vehicle.plateNumber,
+      nickname: vehicle.nickname,
+      type: vehicle.type,
+      isPremium: (vehicle as any).isPremium ?? false,
+      latitude,
+      longitude,
+      speed,
+      heading,
+      timestamp: position.timestamp.toISOString(),
+      routes: vehicle.routes.map((vr) => vr.route),
+    }).catch((err) => console.error("Redis cache error:", err))
+
+    // ─── Driver heartbeat ──────────────────────────────────────
+    setDriverOnline(vehicle.id).catch(() => { })
 
     // Broadcast position update via Pusher for real-time tracking
     const payload: PositionUpdatePayload = {

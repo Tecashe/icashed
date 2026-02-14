@@ -401,6 +401,7 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
                 distanceFromUser,
                 etaMinutes,
                 rating: calculateReliabilityScore(v.vehicleId),
+                imageUrl: v.imageUrl || undefined,
             }
         })
     }, [activeVehicles, routes, userLocation, distanceMatrixResults])
