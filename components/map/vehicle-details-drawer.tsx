@@ -100,87 +100,55 @@ export function VehicleDetailsDrawer({
         <>
             <Drawer open={showVehicleDetails} onOpenChange={setShowVehicleDetails}>
                 <DrawerContent className="max-h-[85vh]">
-                    {/* Hero Image Header */}
-                    {(() => {
-                        const heroImage = selectedVehicle?.imageUrl || images?.[0]?.url
-                        if (heroImage) {
-                            return (
-                                <div className="relative">
-                                    <div className="aspect-[2.5/1] relative overflow-hidden">
-                                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                                        <img
-                                            src={heroImage}
-                                            alt={selectedVehicle?.plateNumber || "Vehicle"}
-                                            className="w-full h-full object-cover"
-                                        />
-                                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent" />
-                                        {/* Drag handle */}
-                                        <div className="absolute top-2 left-1/2 -translate-x-1/2 w-10 h-1 rounded-full bg-white/40" />
-                                    </div>
-                                    <div className="absolute bottom-0 left-0 right-0 p-4">
-                                        <div className="flex items-center justify-between">
-                                            <div>
-                                                <h3 className="text-white font-bold text-lg flex items-center gap-2">
-                                                    <div className="h-3 w-3 rounded-full bg-green-500 animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.6)]" />
-                                                    {selectedVehicle?.plateNumber}
-                                                    {selectedVehicle?.nickname && (
-                                                        <span className="text-white/70 text-sm font-normal">
-                                                            ({selectedVehicle.nickname})
-                                                        </span>
-                                                    )}
-                                                </h3>
-                                                <p className="text-white/70 text-sm">{selectedVehicle?.routeName}</p>
-                                            </div>
-                                            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-green-500/20 backdrop-blur-sm border border-green-500/30">
-                                                <Zap className="h-3.5 w-3.5 text-green-400" />
-                                                <span className="text-green-300 text-xs font-semibold">
-                                                    {Math.round(selectedVehicle?.speed || 0)} km/h
-                                                </span>
-                                            </div>
+                    <DrawerHeader className="border-b pb-3">
+                        <DrawerTitle className="flex items-center gap-3">
+                            {/* Vehicle thumbnail or color dot */}
+                            {(() => {
+                                const thumbUrl = selectedVehicle?.imageUrl || images?.[0]?.url
+                                if (thumbUrl) {
+                                    return (
+                                        <div className="relative flex-shrink-0">
+                                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                                            <img
+                                                src={thumbUrl}
+                                                alt={selectedVehicle?.plateNumber || "Vehicle"}
+                                                className="h-12 w-12 rounded-xl object-cover border-2 shadow-sm"
+                                                style={{ borderColor: selectedVehicle?.color || '#10B981' }}
+                                            />
+                                            <div className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-green-500 border-2 border-background animate-pulse" />
                                         </div>
-                                    </div>
-                                    {/* Image counter if multiple images */}
-                                    {images.length > 1 && (
-                                        <div className="absolute top-3 right-3 flex items-center gap-1 px-2 py-1 rounded-full bg-black/50 backdrop-blur-sm">
-                                            <ImageIcon className="h-3 w-3 text-white/70" />
-                                            <span className="text-white/70 text-xs">{images.length}</span>
-                                        </div>
-                                    )}
-                                </div>
-                            )
-                        }
-
-                        // Fallback: no image — text-only header
-                        return (
-                            <DrawerHeader className="border-b pb-3">
-                                <DrawerTitle className="flex items-center gap-2">
+                                    )
+                                }
+                                return (
                                     <div className="h-4 w-4 rounded-full animate-pulse shadow-sm" style={{
                                         backgroundColor: selectedVehicle?.color
                                     }} />
+                                )
+                            })()}
+                            <div>
+                                <div className="flex items-center gap-1.5">
                                     {selectedVehicle?.plateNumber}
                                     {selectedVehicle?.nickname && (
                                         <span className="text-sm text-muted-foreground font-normal">
                                             ({selectedVehicle.nickname})
                                         </span>
                                     )}
-                                </DrawerTitle>
-                                <DrawerDescription>{selectedVehicle?.routeName}</DrawerDescription>
-                            </DrawerHeader>
-                        )
-                    })()}
+                                </div>
+                                <p className="text-sm text-muted-foreground font-normal">{selectedVehicle?.routeName}</p>
+                            </div>
+                        </DrawerTitle>
+                    </DrawerHeader>
 
                     {selectedVehicle && (
                         <div className="p-4 space-y-4 overflow-y-auto max-h-[70vh]">
-                            {/* Live Status (only when no hero image — hero includes speed) */}
-                            {!selectedVehicle.imageUrl && images.length === 0 && (
-                                <div className="flex items-center gap-2 p-3 bg-gradient-to-r from-green-500/15 to-green-600/10 border border-green-500/30 rounded-xl">
-                                    <div className="h-3 w-3 rounded-full bg-green-500 animate-pulse" />
-                                    <span className="text-sm font-semibold text-green-700 dark:text-green-400">
-                                        Live • {Math.round(selectedVehicle.speed)} km/h
-                                    </span>
-                                    {selectedVehicle.speed > 5 && <Zap className="h-3.5 w-3.5 text-green-500 ml-auto" />}
-                                </div>
-                            )}
+                            {/* Live Status */}
+                            <div className="flex items-center gap-2 p-3 bg-gradient-to-r from-green-500/15 to-green-600/10 border border-green-500/30 rounded-xl">
+                                <div className="h-3 w-3 rounded-full bg-green-500 animate-pulse" />
+                                <span className="text-sm font-semibold text-green-700 dark:text-green-400">
+                                    Live • {Math.round(selectedVehicle.speed)} km/h
+                                </span>
+                                {selectedVehicle.speed > 5 && <Zap className="h-3.5 w-3.5 text-green-500 ml-auto" />}
+                            </div>
 
                             {/* Images Carousel */}
                             {images.length > 0 && (
