@@ -17,6 +17,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
+import { loadGoogleMaps } from "@/lib/google-maps-loader"
 
 interface JourneyData {
     shareCode: string
@@ -66,7 +67,7 @@ export default function JourneyTrackingPage() {
     const [error, setError] = useState("")
     const mapRef = useRef<HTMLDivElement>(null)
     const mapInstanceRef = useRef<google.maps.Map | null>(null)
-    const markerRef = useRef<google.maps.marker.AdvancedMarkerElement | null>(null)
+    const markerRef = useRef<google.maps.Marker | null>(null)
     const routeLineRef = useRef<google.maps.Polyline | null>(null)
 
     // Fetch journey data
@@ -116,20 +117,12 @@ export default function JourneyTrackingPage() {
         if (mapInstanceRef.current) return // Already initialized
 
         const initMap = async () => {
-            const { Loader } = await import("@googlemaps/js-api-loader")
-            const loader = new Loader({
-                apiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || "",
-                version: "weekly",
-                libraries: ["marker"],
-            })
-
-            const google = await loader.load()
+            const google = await loadGoogleMaps()
             const pos = journey.vehicle.position
 
             const map = new google.maps.Map(mapRef.current!, {
                 center: pos ? { lat: pos.lat, lng: pos.lng } : { lat: -1.2921, lng: 36.8219 },
                 zoom: 15,
-                mapId: "journey-tracking-map",
                 disableDefaultUI: true,
                 zoomControl: true,
                 styles: [
@@ -162,52 +155,38 @@ export default function JourneyTrackingPage() {
 
                 // Add stage markers
                 journey.route.stages.forEach((stage) => {
-                    const el = document.createElement("div")
-                    el.innerHTML = stage.isTerminal
-                        ? `<div style="width:12px;height:12px;background:${journey.route!.color};border:2px solid white;border-radius:50%;"></div>`
-                        : `<div style="width:6px;height:6px;background:#6b7280;border-radius:50%;"></div>`
-
-                    new google.maps.marker.AdvancedMarkerElement({
+                    new google.maps.Marker({
                         position: { lat: stage.lat, lng: stage.lng },
                         map,
-                        content: el,
                         title: stage.name,
+                        icon: {
+                            path: google.maps.SymbolPath.CIRCLE,
+                            scale: stage.isTerminal ? 6 : 3,
+                            fillColor: stage.isTerminal ? (journey.route!.color || "#10B981") : "#6b7280",
+                            fillOpacity: 1,
+                            strokeColor: "#ffffff",
+                            strokeWeight: stage.isTerminal ? 2 : 1,
+                        },
                     })
                 })
             }
 
             // Add vehicle marker
             if (pos) {
-                const el = document.createElement("div")
-                el.innerHTML = `
-          <div style="position:relative;">
-            <div style="
-              width: 40px; height: 40px;
-              background: linear-gradient(135deg, #10B981, #059669);
-              border-radius: 50%;
-              display: flex; align-items: center; justify-content: center;
-              box-shadow: 0 0 20px rgba(16,185,129,0.5);
-              border: 3px solid white;
-              animation: pulse 2s infinite;
-            ">
-              <span style="font-size:20px;">🚐</span>
-            </div>
-            <div style="
-              position: absolute; top: -8px; right: -8px;
-              width: 16px; height: 16px;
-              background: #22c55e;
-              border-radius: 50%;
-              border: 2px solid white;
-              animation: ping 1.5s infinite;
-            "></div>
-          </div>
-        `
-
-                markerRef.current = new google.maps.marker.AdvancedMarkerElement({
+                markerRef.current = new google.maps.Marker({
                     position: { lat: pos.lat, lng: pos.lng },
                     map,
-                    content: el,
                     title: journey.vehicle.plateNumber,
+                    icon: {
+                        path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
+                        scale: 7,
+                        fillColor: "#10B981",
+                        fillOpacity: 1,
+                        strokeColor: "#ffffff",
+                        strokeWeight: 2,
+                        rotation: pos.heading || 0,
+                    },
+                    zIndex: 999,
                 })
             }
         }
@@ -220,7 +199,16 @@ export default function JourneyTrackingPage() {
         if (!markerRef.current || !journey?.vehicle.position) return
 
         const pos = journey.vehicle.position
-        markerRef.current.position = { lat: pos.lat, lng: pos.lng }
+        markerRef.current.setPosition({ lat: pos.lat, lng: pos.lng })
+
+        // Update heading arrow
+        const icon = markerRef.current.getIcon() as google.maps.Symbol
+        if (icon) {
+            markerRef.current.setIcon({
+                ...icon,
+                rotation: pos.heading || 0,
+            })
+        }
 
         // Pan map to follow
         if (mapInstanceRef.current) {
