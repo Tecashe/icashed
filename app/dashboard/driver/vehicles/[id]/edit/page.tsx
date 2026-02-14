@@ -246,82 +246,97 @@ export default function EditVehiclePage() {
                 <CardHeader className="pb-3">
                     <CardTitle className="text-base flex items-center gap-2">
                         <Camera className="h-4 w-4" />
-                        Vehicle Images
+                        Vehicle Photos
+                        {vehicle.images.length === 0 && (
+                            <Badge variant="destructive" className="text-[10px] ml-auto">No photos</Badge>
+                        )}
                     </CardTitle>
+                    <p className="text-sm text-muted-foreground">
+                        Upload photos from different angles to help passengers identify your vehicle.
+                        {vehicle.images.length === 0 && <span className="font-medium text-destructive"> At least one photo is required.</span>}
+                    </p>
                 </CardHeader>
-                <CardContent>
-                    <div className="grid grid-cols-3 gap-3 sm:grid-cols-4">
-                        {vehicle.images.map((img) => (
-                            <div
-                                key={img.id}
-                                className="group relative aspect-square rounded-xl overflow-hidden border border-border bg-muted"
-                            >
-                                <Image
-                                    src={img.url}
-                                    alt={img.caption || "Vehicle"}
-                                    fill
-                                    className="object-cover"
-                                />
-                                {img.isPrimary && (
-                                    <Badge
-                                        className="absolute top-1.5 left-1.5 text-[10px] bg-primary/90 text-primary-foreground"
-                                    >
-                                        Primary
-                                    </Badge>
-                                )}
-                                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100">
-                                    {!img.isPrimary && (
+                <CardContent className="space-y-4">
+                    {/* Existing images grid */}
+                    {vehicle.images.length > 0 && (
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                            {vehicle.images.map((img) => (
+                                <div
+                                    key={img.id}
+                                    className="group relative aspect-[4/3] rounded-xl overflow-hidden border border-border bg-muted"
+                                >
+                                    <Image
+                                        src={img.url}
+                                        alt={img.caption || "Vehicle"}
+                                        fill
+                                        className="object-cover"
+                                    />
+                                    {img.isPrimary && (
+                                        <Badge
+                                            className="absolute top-1.5 left-1.5 text-[10px] bg-primary/90 text-primary-foreground"
+                                        >
+                                            Primary
+                                        </Badge>
+                                    )}
+                                    {img.caption && (
+                                        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent px-2 py-1.5">
+                                            <span className="text-white text-[10px] font-medium">{img.caption}</span>
+                                        </div>
+                                    )}
+                                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100">
+                                        {!img.isPrimary && (
+                                            <Button
+                                                size="icon"
+                                                variant="secondary"
+                                                className="h-8 w-8 rounded-full"
+                                                onClick={() => handleSetPrimary(img.id)}
+                                            >
+                                                <Star className="h-3.5 w-3.5" />
+                                            </Button>
+                                        )}
                                         <Button
                                             size="icon"
-                                            variant="secondary"
+                                            variant="destructive"
                                             className="h-8 w-8 rounded-full"
-                                            onClick={() => handleSetPrimary(img.id)}
+                                            onClick={() => handleDeleteImage(img.id)}
+                                            disabled={deletingImageId === img.id}
                                         >
-                                            <Star className="h-3.5 w-3.5" />
+                                            {deletingImageId === img.id ? (
+                                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                            ) : (
+                                                <Trash2 className="h-3.5 w-3.5" />
+                                            )}
                                         </Button>
-                                    )}
-                                    <Button
-                                        size="icon"
-                                        variant="destructive"
-                                        className="h-8 w-8 rounded-full"
-                                        onClick={() => handleDeleteImage(img.id)}
-                                        disabled={deletingImageId === img.id}
-                                    >
-                                        {deletingImageId === img.id ? (
-                                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                        ) : (
-                                            <Trash2 className="h-3.5 w-3.5" />
-                                        )}
-                                    </Button>
+                                    </div>
                                 </div>
-                            </div>
-                        ))}
+                            ))}
+                        </div>
+                    )}
 
-                        {/* Upload Button */}
-                        <label className={cn(
-                            "flex flex-col items-center justify-center aspect-square rounded-xl border-2 border-dashed border-border",
-                            "cursor-pointer hover:border-primary/50 hover:bg-primary/5 transition-colors",
-                            uploading && "pointer-events-none opacity-50"
-                        )}>
-                            <input
-                                type="file"
-                                accept="image/jpeg,image/png,image/webp"
-                                className="hidden"
-                                onChange={handleImageUpload}
-                                disabled={uploading}
-                            />
-                            {uploading ? (
-                                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                            ) : (
-                                <>
-                                    <ImagePlus className="h-6 w-6 text-muted-foreground" />
-                                    <span className="mt-1 text-[10px] text-muted-foreground font-medium">
-                                        Add Photo
-                                    </span>
-                                </>
-                            )}
-                        </label>
-                    </div>
+                    {/* Upload button */}
+                    <label className={cn(
+                        "flex items-center justify-center gap-2 rounded-xl border-2 border-dashed border-border py-4",
+                        "cursor-pointer hover:border-primary/50 hover:bg-primary/5 transition-colors",
+                        uploading && "pointer-events-none opacity-50"
+                    )}>
+                        <input
+                            type="file"
+                            accept="image/jpeg,image/png,image/webp"
+                            className="hidden"
+                            onChange={handleImageUpload}
+                            disabled={uploading}
+                        />
+                        {uploading ? (
+                            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                        ) : (
+                            <>
+                                <ImagePlus className="h-5 w-5 text-muted-foreground" />
+                                <span className="text-sm text-muted-foreground font-medium">
+                                    Add Photo
+                                </span>
+                            </>
+                        )}
+                    </label>
                 </CardContent>
             </Card>
 

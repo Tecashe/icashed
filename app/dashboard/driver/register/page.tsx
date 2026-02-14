@@ -34,7 +34,7 @@ import { cn } from "@/lib/utils"
 interface VehicleImage {
   file: File
   preview: string
-  type: "front" | "side" | "interior" | "other"
+  type: "front" | "rear" | "side" | "interior" | "other"
 }
 
 export default function RegisterVehiclePage() {
@@ -112,36 +112,41 @@ export default function RegisterVehiclePage() {
     fileInputRef.current?.click()
   }
 
+  const hasFrontImage = images.some(img => img.type === "front")
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (!hasFrontImage) {
+      toast.error("Front view photo is required", { description: "Please add at least a front view photo of your vehicle" })
+      return
+    }
     setSubmitting(true)
     setError(null)
 
     try {
-      // First, upload images if any
-      let imageUrls: { type: string; url: string }[] = []
+      // 1. Create the vehicle
+      const vehicleRes = await apiPost<{ vehicle: { id: string } }>("/api/driver/vehicles", form)
+      const vehicleId = vehicleRes.vehicle.id
 
-      if (images.length > 0) {
+      // 2. Upload each image to the vehicle
+      for (let i = 0; i < images.length; i++) {
+        const img = images[i]
         const formData = new FormData()
-        images.forEach((img, index) => {
-          formData.append(`image_${index}`, img.file)
-          formData.append(`type_${index}`, img.type)
-        })
-        formData.append("imageCount", images.length.toString())
+        formData.append("image", img.file)
+        formData.append("isPrimary", img.type === "front" ? "true" : "false")
+        formData.append("caption", img.type === "front" ? "Front View" : img.type === "side" ? "Side View" : img.type === "rear" ? "Rear View" : "Interior")
 
-        // For now, we'll skip actual upload and just register the vehicle
-        // In production, you'd upload to Cloudinary/S3 here
-        // const uploadRes = await fetch("/api/upload/vehicle-images", { method: "POST", body: formData })
-        // imageUrls = await uploadRes.json()
+        const uploadRes = await fetch(`/api/vehicles/${vehicleId}/images`, {
+          method: "POST",
+          body: formData,
+        })
+        if (!uploadRes.ok) {
+          console.warn(`Failed to upload ${img.type} image`)
+        }
       }
 
-      await apiPost("/api/driver/vehicles", {
-        ...form,
-        // images: imageUrls, // Uncomment when image upload endpoint is ready
-      })
-
       toast.success("Vehicle registered!", {
-        description: `${form.plateNumber} has been added`,
+        description: `${form.plateNumber} has been added with ${images.length} photo${images.length !== 1 ? "s" : ""}`,
       })
       router.push("/dashboard/driver/vehicles")
     } catch (err) {
@@ -155,8 +160,9 @@ export default function RegisterVehiclePage() {
 
   const routes = routesData?.routes || []
 
-  const imageTypes: { type: VehicleImage["type"]; label: string; icon: React.ReactNode }[] = [
-    { type: "front", label: "Front View", icon: <Camera className="h-5 w-5" /> },
+  const imageTypes: { type: VehicleImage["type"]; label: string; icon: React.ReactNode; required?: boolean }[] = [
+    { type: "front", label: "Front View *", icon: <Camera className="h-5 w-5" />, required: true },
+    { type: "rear", label: "Rear View", icon: <Camera className="h-5 w-5" /> },
     { type: "side", label: "Side View", icon: <Camera className="h-5 w-5" /> },
     { type: "interior", label: "Interior", icon: <Camera className="h-5 w-5" /> },
   ]
@@ -289,10 +295,11 @@ export default function RegisterVehiclePage() {
           </CardHeader>
           <CardContent>
             <p className="text-sm text-muted-foreground mb-4">
-              Add photos of your vehicle to help passengers identify it
+              Add photos of your vehicle to help passengers identify it.
+              <span className="font-medium text-foreground"> Front view is required.</span>
             </p>
 
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               {imageTypes.map(({ type, label, icon }) => {
                 const existingImage = images.find(img => img.type === type)
 
@@ -403,7 +410,7 @@ export default function RegisterVehiclePage() {
         {/* Submit Button */}
         <Button
           type="submit"
-          disabled={submitting || form.routeIds.length === 0}
+          disabled={submitting || form.routeIds.length === 0 || !hasFrontImage}
           size="lg"
           className="h-14 w-full text-base font-semibold"
         >

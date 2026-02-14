@@ -131,7 +131,7 @@ export function VehicleDetailsDrawer({
                                 const imgSrc = selectedVehicle.imageUrl || images?.[0]?.url
                                 if (!imgSrc) return null
                                 return (
-                                    <div className="relative rounded-xl overflow-hidden border" style={{ borderColor: `${selectedVehicle.color}30` }}>
+                                    <div className="relative rounded-xl overflow-hidden border mx-auto max-w-sm w-full" style={{ borderColor: `${selectedVehicle.color}30` }}>
                                         <div className="h-[140px] relative">
                                             {/* eslint-disable-next-line @next/next/no-img-element */}
                                             <img
