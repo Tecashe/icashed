@@ -101,42 +101,18 @@ export function VehicleDetailsDrawer({
             <Drawer open={showVehicleDetails} onOpenChange={setShowVehicleDetails}>
                 <DrawerContent className="max-h-[85vh]">
                     <DrawerHeader className="border-b pb-3">
-                        <DrawerTitle className="flex items-center gap-3">
-                            {/* Vehicle thumbnail or color dot */}
-                            {(() => {
-                                const thumbUrl = selectedVehicle?.imageUrl || images?.[0]?.url
-                                if (thumbUrl) {
-                                    return (
-                                        <div className="relative flex-shrink-0">
-                                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                                            <img
-                                                src={thumbUrl}
-                                                alt={selectedVehicle?.plateNumber || "Vehicle"}
-                                                className="h-12 w-12 rounded-xl object-cover border-2 shadow-sm"
-                                                style={{ borderColor: selectedVehicle?.color || '#10B981' }}
-                                            />
-                                            <div className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-green-500 border-2 border-background animate-pulse" />
-                                        </div>
-                                    )
-                                }
-                                return (
-                                    <div className="h-4 w-4 rounded-full animate-pulse shadow-sm" style={{
-                                        backgroundColor: selectedVehicle?.color
-                                    }} />
-                                )
-                            })()}
-                            <div>
-                                <div className="flex items-center gap-1.5">
-                                    {selectedVehicle?.plateNumber}
-                                    {selectedVehicle?.nickname && (
-                                        <span className="text-sm text-muted-foreground font-normal">
-                                            ({selectedVehicle.nickname})
-                                        </span>
-                                    )}
-                                </div>
-                                <p className="text-sm text-muted-foreground font-normal">{selectedVehicle?.routeName}</p>
-                            </div>
+                        <DrawerTitle className="flex items-center gap-2">
+                            <div className="h-4 w-4 rounded-full animate-pulse shadow-sm" style={{
+                                backgroundColor: selectedVehicle?.color
+                            }} />
+                            {selectedVehicle?.plateNumber}
+                            {selectedVehicle?.nickname && (
+                                <span className="text-sm text-muted-foreground font-normal">
+                                    ({selectedVehicle.nickname})
+                                </span>
+                            )}
                         </DrawerTitle>
+                        <DrawerDescription>{selectedVehicle?.routeName}</DrawerDescription>
                     </DrawerHeader>
 
                     {selectedVehicle && (
@@ -149,6 +125,39 @@ export function VehicleDetailsDrawer({
                                 </span>
                                 {selectedVehicle.speed > 5 && <Zap className="h-3.5 w-3.5 text-green-500 ml-auto" />}
                             </div>
+
+                            {/* Compact Vehicle Image Viewer */}
+                            {(() => {
+                                const imgSrc = selectedVehicle.imageUrl || images?.[0]?.url
+                                if (!imgSrc) return null
+                                return (
+                                    <div className="relative rounded-xl overflow-hidden border" style={{ borderColor: `${selectedVehicle.color}30` }}>
+                                        <div className="h-[140px] relative">
+                                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                                            <img
+                                                src={imgSrc}
+                                                alt={selectedVehicle.plateNumber}
+                                                className="w-full h-full object-cover"
+                                            />
+                                            <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
+                                            {/* Plate badge */}
+                                            <div className="absolute bottom-2 left-2 flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-black/60 backdrop-blur-sm">
+                                                <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+                                                <span className="text-white text-xs font-semibold">{selectedVehicle.plateNumber}</span>
+                                            </div>
+                                            {/* Image count */}
+                                            {images.length > 1 && (
+                                                <div className="absolute bottom-2 right-2 flex items-center gap-1 px-2 py-1 rounded-lg bg-black/60 backdrop-blur-sm">
+                                                    <ImageIcon className="h-3 w-3 text-white/70" />
+                                                    <span className="text-white/70 text-xs">{images.length}</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                        {/* Route color accent line */}
+                                        <div className="h-1" style={{ background: `linear-gradient(90deg, ${selectedVehicle.color}, transparent)` }} />
+                                    </div>
+                                )
+                            })()}
 
                             {/* Images Carousel */}
                             {images.length > 0 && (
