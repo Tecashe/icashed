@@ -79,7 +79,7 @@ export function VehicleDetailsDrawer({
     const vehicleId = selectedVehicle?.id
 
     // Fetch vehicle images
-    const { data: imagesData } = useSWR<VehicleImage[]>(
+    const { data: imagesData } = useSWR<{ images: VehicleImage[] }>(
         vehicleId && showVehicleDetails ? `/api/vehicles/${vehicleId}/images` : null,
         fetcher,
     )
@@ -90,7 +90,7 @@ export function VehicleDetailsDrawer({
         fetcher,
     )
 
-    const images = imagesData || []
+    const images = imagesData?.images || []
     const reviews = reviewsData?.reviews || []
     const avgRating = reviewsData?.averageRating || 0
     const totalReviews = reviewsData?.total || 0

@@ -75,23 +75,40 @@ export async function GET(request: NextRequest) {
     }
 
     // ─── Fallback to Postgres ────────────────────────────────────
-    const vehicles = await prisma.vehicle.findMany({
-      where: { isActive: true },
-      include: {
-        positions: {
-          orderBy: { timestamp: "desc" },
-          take: 1,
+    let vehicles: any[]
+    try {
+      vehicles = await prisma.vehicle.findMany({
+        where: { isActive: true },
+        include: {
+          positions: {
+            orderBy: { timestamp: "desc" },
+            take: 1,
+          },
+          images: {
+            where: { isPrimary: true },
+            take: 1,
+            select: { url: true },
+          },
+          routes: {
+            include: { route: { select: { id: true, name: true, color: true } } },
+          },
         },
-        images: {
-          where: { isPrimary: true },
-          take: 1,
-          select: { url: true },
+      })
+    } catch {
+      // Fallback: images table may not exist yet — query without it
+      vehicles = await prisma.vehicle.findMany({
+        where: { isActive: true },
+        include: {
+          positions: {
+            orderBy: { timestamp: "desc" },
+            take: 1,
+          },
+          routes: {
+            include: { route: { select: { id: true, name: true, color: true } } },
+          },
         },
-        routes: {
-          include: { route: { select: { id: true, name: true, color: true } } },
-        },
-      },
-    })
+      })
+    }
 
     const positions = vehicles
       .filter((v: any) => v.positions.length > 0)
