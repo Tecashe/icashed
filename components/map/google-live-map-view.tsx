@@ -211,10 +211,11 @@ export function LiveMapView({ isFullScreen = false, onToggleFullScreen }: LiveMa
     const suggestedRoutes = useMemo(() => {
         if (!originStage || !destinationStage) return []
         return routes.filter(route => {
-            const stageNames = route.stages?.map(s => s.name.toLowerCase()) || []
-            const hasOrigin = stageNames.includes(originStage.name?.toLowerCase() || "")
-            const hasDest = stageNames.includes(destinationStage.name.toLowerCase())
-            return hasOrigin && hasDest
+            const stages = route.stages || []
+            const originIdx = stages.findIndex(s => s.name.toLowerCase() === (originStage.name?.toLowerCase() || ""))
+            const destIdx = stages.findIndex(s => s.name.toLowerCase() === destinationStage.name.toLowerCase())
+            // Both stages must exist AND origin must come BEFORE destination (correct direction)
+            return originIdx !== -1 && destIdx !== -1 && originIdx < destIdx
         }).map(route => {
             const vehicleCount = allPositions.filter(p => p.routes.some(r => r.id === route.id)).length
             const activeVehicleCount = allPositions.filter(p =>

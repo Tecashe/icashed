@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { getCurrentUser } from "@/lib/auth"
-import { writeFile, mkdir } from "fs/promises"
-import path from "path"
+import { uploadToBlob, deleteFromBlob } from "@/lib/blob-storage"
 import { randomBytes } from "crypto"
 
 // GET - Get images for a vehicle
@@ -31,7 +30,7 @@ export async function GET(
     }
 }
 
-// POST - Upload new image
+// POST - Upload new image (uses Vercel Blob for cloud storage)
 export async function POST(
     request: NextRequest,
     { params }: { params: Promise<{ id: string }> }
@@ -86,22 +85,13 @@ export async function POST(
             )
         }
 
-        // Create uploads directory if it doesn't exist
-        const uploadDir = path.join(process.cwd(), "public", "uploads", "vehicles")
-        await mkdir(uploadDir, { recursive: true })
+        // Generate a unique pathname for the blob
+        const ext = file.name.split(".").pop() || "jpg"
+        const filename = `${vehicleId}-${randomBytes(8).toString("hex")}.${ext}`
+        const pathname = `vehicles/${vehicleId}/${filename}`
 
-        // Generate unique filename
-        const ext = path.extname(file.name) || ".jpg"
-        const filename = `${vehicleId}-${randomBytes(8).toString("hex")}${ext}`
-        const filepath = path.join(uploadDir, filename)
-
-        // Write file
-        const bytes = await file.arrayBuffer()
-        const buffer = Buffer.from(bytes)
-        await writeFile(filepath, buffer)
-
-        // URL for the uploaded image
-        const url = `/uploads/vehicles/${filename}`
+        // Upload to Vercel Blob
+        const { url } = await uploadToBlob(file, pathname)
 
         // If this is primary, unset other primary images
         if (isPrimary) {
@@ -111,7 +101,7 @@ export async function POST(
             })
         }
 
-        // Create database record
+        // Create database record with the public Blob URL
         const image = await prisma.vehicleImage.create({
             data: {
                 vehicleId,
@@ -166,13 +156,19 @@ export async function DELETE(
             )
         }
 
+        // Delete from Vercel Blob storage (handles both blob URLs and legacy local URLs)
+        if (image.url.startsWith("https://")) {
+            try {
+                await deleteFromBlob(image.url)
+            } catch (e) {
+                console.warn("Failed to delete blob, continuing with DB cleanup:", e)
+            }
+        }
+
         // Delete from database
         await prisma.vehicleImage.delete({
             where: { id: imageId },
         })
-
-        // Note: In production, also delete the file from storage
-        // For now, we leave the file to avoid orphan file issues
 
         return NextResponse.json({ success: true })
     } catch (error) {

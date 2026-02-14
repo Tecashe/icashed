@@ -1,8 +1,13 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
+import {
+    calculateRouteProgress,
+    isRushHour,
+    estimateAverageSpeed,
+} from "@/lib/geo-utils"
 
 // GET /api/journey/[code] — Public endpoint, no auth required
-// Returns the shared journey with live vehicle position
+// Returns the shared journey with live vehicle position, progress, ETA, and traffic status
 export async function GET(
     _request: NextRequest,
     { params }: { params: Promise<{ code: string }> }
@@ -70,6 +75,53 @@ export async function GET(
             ? journey.vehicle.routes.find(vr => vr.route.id === journey.routeId)?.route
             : journey.vehicle.routes[0]?.route
 
+        // ─── Compute route progress, ETA & traffic status ────────────────
+        let progressData = null
+        if (position && route && route.stages.length >= 2) {
+            const geoStages = route.stages.map(s => ({
+                id: s.id,
+                name: s.name,
+                latitude: s.latitude,
+                longitude: s.longitude,
+                order: s.order,
+                isTerminal: s.isTerminal,
+            }))
+
+            const rushHour = isRushHour()
+            const avgSpeed = position.speed > 3
+                ? position.speed  // Use actual speed if moving
+                : estimateAverageSpeed(journey.vehicle.type, rushHour)
+
+            const progress = calculateRouteProgress(
+                { latitude: position.latitude, longitude: position.longitude },
+                geoStages,
+                avgSpeed
+            )
+
+            if (progress) {
+                // Detect traffic: speed < 10 km/h while between stages (not at a terminal)
+                const isInTraffic =
+                    position.speed < 10 &&
+                    progress.currentStageIndex > 0 &&
+                    progress.currentStageIndex < geoStages.length - 1
+
+                // Find the nearest stage name
+                const currentStage = geoStages[progress.currentStageIndex]
+                const destinationStage = geoStages[geoStages.length - 1]
+
+                progressData = {
+                    nearestStageName: currentStage.name,
+                    destinationName: destinationStage.name,
+                    etaMinutes: Math.round(progress.etaToTerminus),
+                    progressPercent: Math.round(Math.min(progress.progress, 100)),
+                    distanceRemainingKm: +(progress.totalDistance - progress.distanceTraveled).toFixed(1),
+                    isInTraffic,
+                    isOnRoute: progress.isOnRoute,
+                    nextStageName: progress.nextStage?.name || null,
+                }
+            }
+        }
+
         return NextResponse.json({
             journey: {
                 shareCode: journey.shareCode,
@@ -113,6 +165,7 @@ export async function GET(
                         })),
                     }
                     : null,
+                progress: progressData,
             },
         })
     } catch (error) {

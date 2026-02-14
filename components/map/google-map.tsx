@@ -278,6 +278,79 @@ function adjustColor(color: string, amount: number): string {
 }
 
 // ============================================================================
+// CLUSTERING UTILITIES
+// ============================================================================
+
+const CLUSTER_ZOOM_THRESHOLD = 14 // Cluster at zoom ≤ 14, individual at ≥ 15
+const CLUSTER_GRID_SIZE = 0.002 // ~200m grid cells for grouping
+
+interface VehicleCluster {
+  id: string
+  vehicles: MapVehicle[]
+  center: { lat: number; lng: number }
+  dominantColor: string
+}
+
+function clusterVehicles(vehicles: MapVehicle[]): VehicleCluster[] {
+  // Grid-based spatial clustering — fast O(n)
+  const grid = new Map<string, MapVehicle[]>()
+
+  vehicles.forEach(v => {
+    const cellX = Math.floor(v.lng / CLUSTER_GRID_SIZE)
+    const cellY = Math.floor(v.lat / CLUSTER_GRID_SIZE)
+    const key = `${cellX}_${cellY}`
+    if (!grid.has(key)) grid.set(key, [])
+    grid.get(key)!.push(v)
+  })
+
+  const clusters: VehicleCluster[] = []
+  grid.forEach((cellVehicles, key) => {
+    // Calculate centroid
+    const centerLat = cellVehicles.reduce((s, v) => s + v.lat, 0) / cellVehicles.length
+    const centerLng = cellVehicles.reduce((s, v) => s + v.lng, 0) / cellVehicles.length
+
+    // Find the most common route color
+    const colorCounts = new Map<string, number>()
+    cellVehicles.forEach(v => {
+      colorCounts.set(v.color, (colorCounts.get(v.color) || 0) + 1)
+    })
+    let dominantColor = "#10B981"
+    let maxCount = 0
+    colorCounts.forEach((count, color) => {
+      if (count > maxCount) { maxCount = count; dominantColor = color }
+    })
+
+    clusters.push({
+      id: key,
+      vehicles: cellVehicles,
+      center: { lat: centerLat, lng: centerLng },
+      dominantColor,
+    })
+  })
+
+  return clusters
+}
+
+function createClusterMarkerHtml(cluster: VehicleCluster): string {
+  const count = cluster.vehicles.length
+  const size = count <= 3 ? 48 : count <= 10 ? 56 : 64
+  const routeNames = [...new Set(cluster.vehicles.map(v => v.routeName))].slice(0, 2).join(", ")
+
+  return `
+    <div class="gmap-cluster-marker" style="--cluster-color: ${cluster.dominantColor};">
+      <div class="gmap-cluster-pulse"></div>
+      <div class="gmap-cluster-body" style="
+        width: ${size}px; height: ${size}px;
+        background: linear-gradient(135deg, ${cluster.dominantColor}, ${adjustColor(cluster.dominantColor, -30)});
+      ">
+        <span class="gmap-cluster-count">${count}</span>
+        <span class="gmap-cluster-label">vehicles</span>
+      </div>
+    </div>
+  `
+}
+
+// ============================================================================
 // MAIN COMPONENT
 // ============================================================================
 
@@ -309,10 +382,12 @@ export function GoogleMap({
   const mapInstanceRef = useRef<google.maps.Map | null>(null)
   const [isLoaded, setIsLoaded] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [currentZoom, setCurrentZoom] = useState(zoom)
 
   // Refs for map objects
   const vehicleMarkersRef = useRef<Map<string, google.maps.marker.AdvancedMarkerElement>>(new Map())
   const vehiclePositionsRef = useRef<Map<string, { lat: number; lng: number }>>(new Map())
+  const clusterMarkersRef = useRef<Map<string, google.maps.marker.AdvancedMarkerElement>>(new Map())
   const stageMarkersRef = useRef<google.maps.marker.AdvancedMarkerElement[]>([])
   const routePolylinesRef = useRef<google.maps.Polyline[]>([])
   const routePathsRef = useRef<Map<string, Array<{ lat: number; lng: number }>>>(new Map())
@@ -367,6 +442,11 @@ export function GoogleMap({
 
         mapInstanceRef.current = map
         infoWindowRef.current = new google.maps.InfoWindow()
+
+        // Track zoom changes for clustering
+        map.addListener("zoom_changed", () => {
+          setCurrentZoom(map.getZoom() || zoom)
+        })
 
         setIsLoaded(true)
         onMapReady?.(map)
@@ -627,7 +707,144 @@ export function GoogleMap({
   const onVehicleClickRef = useRef(onVehicleClick)
   onVehicleClickRef.current = onVehicleClick
 
-  // Update vehicle markers
+  const shouldCluster = currentZoom <= CLUSTER_ZOOM_THRESHOLD
+
+  // Helper: clear all cluster markers
+  const clearClusterMarkers = useCallback(() => {
+    clusterMarkersRef.current.forEach((marker) => {
+      try { marker.map = null } catch (e) { /* ignore */ }
+    })
+    clusterMarkersRef.current.clear()
+  }, [])
+
+  // Helper: clear all individual vehicle markers
+  const clearVehicleMarkers = useCallback(() => {
+    vehicleMarkersRef.current.forEach((marker) => {
+      try { marker.map = null } catch (e) { /* ignore */ }
+    })
+    vehicleMarkersRef.current.clear()
+    vehiclePositionsRef.current.clear()
+  }, [])
+
+  // Helper: show the info window for a vehicle
+  const showVehicleInfoWindow = useCallback((freshVehicle: MapVehicle, anchor: google.maps.marker.AdvancedMarkerElement) => {
+    const distanceText = freshVehicle.distanceFromUser !== undefined
+      ? freshVehicle.distanceFromUser < 1000
+        ? `${Math.round(freshVehicle.distanceFromUser)}m`
+        : `${(freshVehicle.distanceFromUser / 1000).toFixed(1)}km`
+      : ""
+
+    const vehicleEmoji = {
+      MATATU: "🚐", BUS: "🚌", BODA: "🏍️", TUK_TUK: "🛺",
+    }[freshVehicle.type] || "🚐"
+
+    const ratingStars = freshVehicle.rating
+      ? Array.from({ length: 5 }, (_, i) =>
+        `<span style="color: ${i < Math.round(freshVehicle.rating!) ? '#fbbf24' : '#374151'}; font-size: 13px;">★</span>`
+      ).join('')
+      : ''
+
+    if (infoWindowRef.current) {
+      infoWindowRef.current.setContent(`
+        <div style="
+          padding: 0;
+          font-family: -apple-system, BlinkMacSystemFont, 'Inter', system-ui, sans-serif;
+          background: linear-gradient(145deg, #1a1a2e, #16213e);
+          color: #e2e8f0;
+          border-radius: 14px;
+          min-width: 240px;
+          overflow: hidden;
+          border: 1px solid rgba(255,255,255,0.06);
+        ">
+          <!-- Header with vehicle image -->
+          <div style="
+            padding: 14px 16px 10px;
+            display: flex; align-items: center; gap: 12px;
+            border-bottom: 1px solid rgba(255,255,255,0.06);
+          ">
+            <div style="
+              width: 48px; height: 48px;
+              border-radius: 12px;
+              background: linear-gradient(135deg, ${freshVehicle.color}20, ${freshVehicle.color}40);
+              display: flex; align-items: center; justify-content: center;
+              font-size: 24px;
+              border: 2px solid ${freshVehicle.color}50;
+              flex-shrink: 0;
+              ${freshVehicle.imageUrl ? `background-image: url(${freshVehicle.imageUrl}); background-size: cover; background-position: center; font-size: 0;` : ''}
+            ">${freshVehicle.imageUrl ? '' : vehicleEmoji}</div>
+            <div style="flex: 1; min-width: 0;">
+              <div style="display: flex; align-items: center; gap: 6px;">
+                <span style="font-weight: 800; font-size: 16px; color: #f1f5f9; letter-spacing: 0.5px;">${freshVehicle.plateNumber}</span>
+                ${freshVehicle.isLive ? '<span style="width: 8px; height: 8px; border-radius: 50%; background: #22c55e; display: inline-block; box-shadow: 0 0 6px #22c55e80; animation: pulse 1.5s infinite;"></span>' : ''}
+              </div>
+              ${freshVehicle.nickname ? `<div style="font-size: 12px; color: #94a3b8; margin-top: 1px;">${freshVehicle.nickname}</div>` : ''}
+              ${ratingStars ? `<div style="margin-top: 3px;">${ratingStars} <span style="color: #64748b; font-size: 11px;">${freshVehicle.rating?.toFixed(1)}</span></div>` : ''}
+            </div>
+          </div>
+
+          <!-- Route info -->
+          ${freshVehicle.originStageName && freshVehicle.destinationStageName ? `
+            <div style="
+              padding: 8px 16px;
+              display: flex; align-items: center; gap: 8px;
+              font-size: 12px; color: #94a3b8;
+              border-bottom: 1px solid rgba(255,255,255,0.06);
+            ">
+              <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${freshVehicle.color};"></span>
+              <span style="font-weight: 600; color: #cbd5e1;">${freshVehicle.originStageName}</span>
+              <span style="color: #475569;">→</span>
+              <span style="font-weight: 600; color: #cbd5e1;">${freshVehicle.destinationStageName}</span>
+            </div>
+          ` : ''}
+
+          <!-- Stats row -->
+          <div style="
+            padding: 10px 16px 8px;
+            display: flex; gap: 6px; flex-wrap: wrap;
+          ">
+            <div style="
+              display: flex; align-items: center; gap: 5px;
+              padding: 4px 10px; border-radius: 8px;
+              background: rgba(59, 130, 246, 0.12);
+              font-size: 12px; font-weight: 600;
+              color: #93c5fd;
+            ">⚡ ${Math.round(freshVehicle.speed)} km/h</div>
+            ${distanceText ? `
+              <div style="
+                display: flex; align-items: center; gap: 5px;
+                padding: 4px 10px; border-radius: 8px;
+                background: rgba(16, 185, 129, 0.12);
+                font-size: 12px; font-weight: 600;
+                color: #6ee7b7;
+              ">📍 ${distanceText}</div>
+            ` : ''}
+            ${freshVehicle.etaMinutes ? `
+              <div style="
+                display: flex; align-items: center; gap: 5px;
+                padding: 4px 10px; border-radius: 8px;
+                background: rgba(249, 115, 22, 0.12);
+                font-size: 12px; font-weight: 600;
+                color: #fdba74;
+              ">🕐 ${freshVehicle.etaMinutes} min</div>
+            ` : ''}
+          </div>
+
+          <!-- Tap for details hint -->
+          <div style="
+            padding: 6px 16px 10px;
+            font-size: 11px;
+            color: #64748b;
+            text-align: center;
+            cursor: pointer;
+          ">Tap for full details & reviews ↓</div>
+        </div>
+      `)
+      infoWindowRef.current.open(mapInstanceRef.current!, anchor)
+    }
+    onVehicleClickRef.current?.(freshVehicle)
+  }, [])
+
+  // Update vehicle markers — with clustering support
   useEffect(() => {
     if (!mapInstanceRef.current || !isLoaded) return
 
@@ -635,6 +852,94 @@ export function GoogleMap({
     const vehicleMap = new Map<string, MapVehicle>()
     vehicles.forEach(v => vehicleMap.set(v.id, v))
     vehiclesDataRef.current = vehicleMap
+
+    // ═══════════════════════════════════════════════════════════════════
+    // CLUSTER MODE (zoom ≤ 14)
+    // ═══════════════════════════════════════════════════════════════════
+    if (shouldCluster && vehicles.length > 1) {
+      // Hide all individual markers
+      clearVehicleMarkers()
+
+      const clusters = clusterVehicles(vehicles)
+      const activeClusterIds = new Set(clusters.map(c => c.id))
+
+      // Remove stale cluster markers
+      clusterMarkersRef.current.forEach((marker, id) => {
+        if (!activeClusterIds.has(id)) {
+          try { marker.map = null } catch (e) { /* ignore */ }
+          clusterMarkersRef.current.delete(id)
+        }
+      })
+
+      // Create/update cluster markers
+      clusters.forEach((cluster) => {
+        if (cluster.vehicles.length === 1) {
+          // Single vehicle in cluster — show as individual marker
+          const vehicle = cluster.vehicles[0]
+          const isSelected = selectedVehicleId === vehicle.id
+          const markerContent = document.createElement("div")
+          markerContent.innerHTML = createVehicleMarkerHtml(vehicle, isSelected)
+
+          // Remove any existing cluster marker for this cell
+          const existingCluster = clusterMarkersRef.current.get(cluster.id)
+          if (existingCluster) {
+            try { existingCluster.map = null } catch (e) { /* ignore */ }
+            clusterMarkersRef.current.delete(cluster.id)
+          }
+
+          // Create individual marker
+          if (!vehicleMarkersRef.current.has(vehicle.id)) {
+            const marker = new google.maps.marker.AdvancedMarkerElement({
+              map: mapInstanceRef.current!,
+              position: { lat: vehicle.lat, lng: vehicle.lng },
+              content: markerContent,
+              title: vehicle.plateNumber,
+              zIndex: 1000,
+            })
+            const vehicleId = vehicle.id
+            marker.addListener("gmp-click", () => {
+              const fresh = vehiclesDataRef.current.get(vehicleId)
+              if (fresh) showVehicleInfoWindow(fresh, marker)
+            })
+            vehicleMarkersRef.current.set(vehicle.id, marker)
+          }
+          return
+        }
+
+        // Multi-vehicle cluster
+        const existingCluster = clusterMarkersRef.current.get(cluster.id)
+        const clusterContent = document.createElement("div")
+        clusterContent.innerHTML = createClusterMarkerHtml(cluster)
+
+        if (existingCluster) {
+          existingCluster.position = cluster.center
+          existingCluster.content = clusterContent
+        } else {
+          const clusterMarker = new google.maps.marker.AdvancedMarkerElement({
+            map: mapInstanceRef.current!,
+            position: cluster.center,
+            content: clusterContent,
+            title: `${cluster.vehicles.length} vehicles`,
+            zIndex: 900,
+          })
+
+          // Click cluster to zoom in
+          clusterMarker.addListener("gmp-click", () => {
+            mapInstanceRef.current?.setZoom(16)
+            mapInstanceRef.current?.panTo(cluster.center)
+          })
+
+          clusterMarkersRef.current.set(cluster.id, clusterMarker)
+        }
+      })
+
+      return
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // INDIVIDUAL MARKER MODE (zoom ≥ 15)
+    // ═══════════════════════════════════════════════════════════════════
+    clearClusterMarkers()
 
     const currentIds = new Set(vehicles.map((v) => v.id))
 
@@ -683,121 +988,7 @@ export function GoogleMap({
         marker.addListener("gmp-click", () => {
           const freshVehicle = vehiclesDataRef.current.get(vehicleId)
           if (!freshVehicle) return
-
-          const distanceText = freshVehicle.distanceFromUser !== undefined
-            ? freshVehicle.distanceFromUser < 1000
-              ? `${Math.round(freshVehicle.distanceFromUser)}m`
-              : `${(freshVehicle.distanceFromUser / 1000).toFixed(1)}km`
-            : ""
-
-          const vehicleEmoji = {
-            MATATU: "🚐", BUS: "🚌", BODA: "🏍️", TUK_TUK: "🛺",
-          }[freshVehicle.type] || "🚐"
-
-          const ratingStars = freshVehicle.rating
-            ? Array.from({ length: 5 }, (_, i) =>
-              `<span style="color: ${i < Math.round(freshVehicle.rating!) ? '#fbbf24' : '#374151'}; font-size: 13px;">★</span>`
-            ).join('')
-            : ''
-
-          if (infoWindowRef.current) {
-            infoWindowRef.current.setContent(`
-                          <div style="
-                            padding: 0;
-                            font-family: -apple-system, BlinkMacSystemFont, 'Inter', system-ui, sans-serif;
-                            background: linear-gradient(145deg, #1a1a2e, #16213e);
-                            color: #e2e8f0;
-                            border-radius: 14px;
-                            min-width: 240px;
-                            overflow: hidden;
-                            border: 1px solid rgba(255,255,255,0.06);
-                          ">
-                            <!-- Header with vehicle image -->
-                            <div style="
-                              padding: 14px 16px 10px;
-                              display: flex; align-items: center; gap: 12px;
-                              border-bottom: 1px solid rgba(255,255,255,0.06);
-                            ">
-                              <div style="
-                                width: 48px; height: 48px;
-                                border-radius: 12px;
-                                background: linear-gradient(135deg, ${freshVehicle.color}20, ${freshVehicle.color}40);
-                                display: flex; align-items: center; justify-content: center;
-                                font-size: 24px;
-                                border: 2px solid ${freshVehicle.color}50;
-                                flex-shrink: 0;
-                                ${freshVehicle.imageUrl ? `background-image: url(${freshVehicle.imageUrl}); background-size: cover; background-position: center; font-size: 0;` : ''}
-                              ">${freshVehicle.imageUrl ? '' : vehicleEmoji}</div>
-                              <div style="flex: 1; min-width: 0;">
-                                <div style="display: flex; align-items: center; gap: 6px;">
-                                  <span style="font-weight: 800; font-size: 16px; color: #f1f5f9; letter-spacing: 0.5px;">${freshVehicle.plateNumber}</span>
-                                  ${freshVehicle.isLive ? '<span style="width: 8px; height: 8px; border-radius: 50%; background: #22c55e; display: inline-block; box-shadow: 0 0 6px #22c55e80; animation: pulse 1.5s infinite;"></span>' : ''}
-                                </div>
-                                ${freshVehicle.nickname ? `<div style="font-size: 12px; color: #94a3b8; margin-top: 1px;">${freshVehicle.nickname}</div>` : ''}
-                                ${ratingStars ? `<div style="margin-top: 3px;">${ratingStars} <span style="color: #64748b; font-size: 11px;">${freshVehicle.rating?.toFixed(1)}</span></div>` : ''}
-                              </div>
-                            </div>
-
-                            <!-- Route info -->
-                            ${freshVehicle.originStageName && freshVehicle.destinationStageName ? `
-                              <div style="
-                                padding: 8px 16px;
-                                display: flex; align-items: center; gap: 8px;
-                                font-size: 12px; color: #94a3b8;
-                                border-bottom: 1px solid rgba(255,255,255,0.06);
-                              ">
-                                <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${freshVehicle.color};"></span>
-                                <span style="font-weight: 600; color: #cbd5e1;">${freshVehicle.originStageName}</span>
-                                <span style="color: #475569;">→</span>
-                                <span style="font-weight: 600; color: #cbd5e1;">${freshVehicle.destinationStageName}</span>
-                              </div>
-                            ` : ''}
-
-                            <!-- Stats row -->
-                            <div style="
-                              padding: 10px 16px 8px;
-                              display: flex; gap: 6px; flex-wrap: wrap;
-                            ">
-                              <div style="
-                                display: flex; align-items: center; gap: 5px;
-                                padding: 4px 10px; border-radius: 8px;
-                                background: rgba(59, 130, 246, 0.12);
-                                font-size: 12px; font-weight: 600;
-                                color: #93c5fd;
-                              ">⚡ ${Math.round(freshVehicle.speed)} km/h</div>
-                              ${distanceText ? `
-                                <div style="
-                                  display: flex; align-items: center; gap: 5px;
-                                  padding: 4px 10px; border-radius: 8px;
-                                  background: rgba(16, 185, 129, 0.12);
-                                  font-size: 12px; font-weight: 600;
-                                  color: #6ee7b7;
-                                ">📍 ${distanceText}</div>
-                              ` : ''}
-                              ${freshVehicle.etaMinutes ? `
-                                <div style="
-                                  display: flex; align-items: center; gap: 5px;
-                                  padding: 4px 10px; border-radius: 8px;
-                                  background: rgba(249, 115, 22, 0.12);
-                                  font-size: 12px; font-weight: 600;
-                                  color: #fdba74;
-                                ">🕐 ${freshVehicle.etaMinutes} min</div>
-                              ` : ''}
-                            </div>
-
-                            <!-- Tap for details hint -->
-                            <div style="
-                              padding: 6px 16px 10px;
-                              font-size: 11px;
-                              color: #64748b;
-                              text-align: center;
-                              cursor: pointer;
-                            ">Tap for full details & reviews ↓</div>
-                          </div>
-                        `)
-            infoWindowRef.current.open(mapInstanceRef.current!, marker)
-          }
-          onVehicleClickRef.current?.(freshVehicle)
+          showVehicleInfoWindow(freshVehicle, marker)
         })
 
         vehicleMarkersRef.current.set(vehicle.id, marker)
@@ -805,7 +996,7 @@ export function GoogleMap({
 
       vehiclePositionsRef.current.set(vehicle.id, { lat: vehicle.lat, lng: vehicle.lng })
     })
-  }, [vehicles, selectedVehicleId, enableAnimation, isLoaded])
+  }, [vehicles, selectedVehicleId, enableAnimation, isLoaded, shouldCluster, clearClusterMarkers, clearVehicleMarkers, showVehicleInfoWindow])
 
   // User location marker
   useEffect(() => {
@@ -1052,6 +1243,73 @@ export function GoogleMap({
           50% {
             transform: scale(1.15);
             opacity: 0.6;
+          }
+        }
+
+        /* Cluster Markers */
+        .gmap-cluster-marker {
+          position: relative;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+          transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .gmap-cluster-marker:hover {
+          transform: scale(1.15) !important;
+        }
+
+        .gmap-cluster-body {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          border-radius: 50%;
+          border: 3px solid rgba(255, 255, 255, 0.9);
+          box-shadow:
+            0 4px 24px rgba(0, 0, 0, 0.4),
+            0 0 40px var(--cluster-color, #10b981);
+          position: relative;
+          z-index: 2;
+        }
+
+        .gmap-cluster-count {
+          font-size: 18px;
+          font-weight: 800;
+          color: white;
+          line-height: 1;
+          text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        .gmap-cluster-label {
+          font-size: 8px;
+          font-weight: 600;
+          color: rgba(255, 255, 255, 0.85);
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+          line-height: 1;
+          margin-top: 1px;
+        }
+
+        .gmap-cluster-pulse {
+          position: absolute;
+          width: 80px;
+          height: 80px;
+          border-radius: 50%;
+          background: radial-gradient(circle, var(--cluster-color, #10b981) 0%, transparent 70%);
+          opacity: 0.3;
+          animation: gmap-cluster-pulse-anim 2s ease-out infinite;
+        }
+
+        @keyframes gmap-cluster-pulse-anim {
+          0% {
+            transform: scale(0.5);
+            opacity: 0.4;
+          }
+          100% {
+            transform: scale(1.8);
+            opacity: 0;
           }
         }
 
