@@ -12,6 +12,7 @@ import {
   Clock,
   Loader2,
   ChevronRight,
+  Building2,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
@@ -39,7 +40,7 @@ export default function AdminDashboardPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-6">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <Card>
           <CardContent className="flex flex-col items-center p-4 text-center">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
@@ -109,6 +110,30 @@ export default function AdminDashboardPage() {
               {data?.pendingReports || 0}
             </p>
             <p className="text-xs text-muted-foreground">Pending Reports</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="flex flex-col items-center p-4 text-center">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-chart-2/10">
+              <Building2 className="h-5 w-5 text-chart-2" />
+            </div>
+            <p className="mt-2 text-2xl font-bold text-foreground">
+              {data?.totalSaccos || 0}
+            </p>
+            <p className="text-xs text-muted-foreground">Total SACCOs</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="flex flex-col items-center p-4 text-center">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-chart-5/10">
+              <Building2 className="h-5 w-5 text-chart-5" />
+            </div>
+            <p className="mt-2 text-2xl font-bold text-foreground">
+              {data?.activeSaccos || 0}
+            </p>
+            <p className="text-xs text-muted-foreground">Active SACCOs</p>
           </CardContent>
         </Card>
       </div>

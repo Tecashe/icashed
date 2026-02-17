@@ -5,6 +5,7 @@ const PROTECTED_ROUTES: Record<string, string[]> = {
   "/dashboard/driver": ["OPERATOR"],
   "/dashboard/admin": ["ADMIN"],
   "/dashboard/passenger": ["COMMUTER"],
+  "/dashboard/sacco": ["SACCO_ADMIN"],
 }
 
 export async function middleware(request: NextRequest) {
@@ -48,6 +49,7 @@ export async function middleware(request: NextRequest) {
       const dashboardMap: Record<string, string> = {
         COMMUTER: "/dashboard/passenger",
         OPERATOR: "/dashboard/driver",
+        SACCO_ADMIN: "/dashboard/sacco",
         ADMIN: "/dashboard/admin",
       }
       return NextResponse.redirect(

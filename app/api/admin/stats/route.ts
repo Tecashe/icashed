@@ -17,6 +17,8 @@ export async function GET() {
       activeVehicles,
       totalReports,
       pendingReports,
+      totalSaccos,
+      activeSaccos,
       recentUsers,
     ] = await Promise.all([
       prisma.user.count(),
@@ -25,6 +27,8 @@ export async function GET() {
       prisma.vehicle.count({ where: { isActive: true } }),
       prisma.report.count(),
       prisma.report.count({ where: { status: "PENDING" } }),
+      prisma.sacco.count(),
+      prisma.sacco.count({ where: { isActive: true } }),
       prisma.user.findMany({
         select: { id: true, name: true, email: true, role: true, createdAt: true },
         orderBy: { createdAt: "desc" },
@@ -39,6 +43,8 @@ export async function GET() {
       activeVehicles,
       totalReports,
       pendingReports,
+      totalSaccos,
+      activeSaccos,
       recentUsers,
     })
   } catch (error) {

@@ -31,6 +31,7 @@ model User {
   notifications     Notification[]
   sharedJourneys    SharedJourney[]
   premiumPayments   PremiumPayment[]
+  saccoMemberships  SaccoMembership[]
 
   @@map("users")
 }
@@ -51,6 +52,7 @@ model Session {
 enum UserRole {
   COMMUTER
   OPERATOR
+  SACCO_ADMIN
   ADMIN
 }
 
@@ -116,6 +118,7 @@ model Vehicle {
   type          VehicleType   @default(MATATU)
   capacity      Int           @default(14)
   ownerId       String        @map("owner_id")
+  saccoId       String?       @map("sacco_id")
   isActive      Boolean       @default(true) @map("is_active")
   isPremium     Boolean       @default(false) @map("is_premium")
   rating        Float         @default(0)
@@ -124,12 +127,14 @@ model Vehicle {
   updatedAt     DateTime      @updatedAt @map("updated_at")
 
   owner         User          @relation(fields: [ownerId], references: [id])
+  sacco         Sacco?        @relation(fields: [saccoId], references: [id])
   routes        VehicleRoute[]
   images        VehicleImage[]
   positions     VehiclePosition[]
   reviews       Review[]
   sharedJourneys SharedJourney[]
   premiumPayments PremiumPayment[]
+  saccoCollections SaccoCollection[]
 
   @@map("vehicles")
 }
@@ -358,4 +363,69 @@ enum PremiumPlan {
   WEEKLY
   MONTHLY
   QUARTERLY
+}
+
+// ─── SACCO Management ────────────────────────────────────────
+
+model Sacco {
+  id           String        @id @default(cuid())
+  name         String        @unique
+  code         String        @unique
+  county       String
+  town         String
+  phone        String?
+  email        String?
+  regNumber    String?       @map("reg_number")
+  chairman     String?
+  secretary    String?
+  isActive     Boolean       @default(true) @map("is_active")
+  logo         String?
+  description  String?
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @updatedAt @map("updated_at")
+
+  memberships  SaccoMembership[]
+  vehicles     Vehicle[]
+  collections  SaccoCollection[]
+
+  @@map("saccos")
+}
+
+model SaccoMembership {
+  id        String         @id @default(cuid())
+  saccoId   String         @map("sacco_id")
+  userId    String         @map("user_id")
+  role      SaccoRole      @default(MEMBER)
+  joinedAt  DateTime       @default(now()) @map("joined_at")
+  isActive  Boolean        @default(true) @map("is_active")
+
+  sacco     Sacco          @relation(fields: [saccoId], references: [id], onDelete: Cascade)
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([saccoId, userId])
+  @@map("sacco_memberships")
+}
+
+enum SaccoRole {
+  CHAIRMAN
+  SECRETARY
+  TREASURER
+  MEMBER
+}
+
+model SaccoCollection {
+  id          String   @id @default(cuid())
+  saccoId     String   @map("sacco_id")
+  vehicleId   String   @map("vehicle_id")
+  amount      Float
+  date        DateTime @default(now())
+  description String?
+  recordedBy  String   @map("recorded_by")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  sacco   Sacco   @relation(fields: [saccoId], references: [id], onDelete: Cascade)
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  @@index([saccoId, date])
+  @@map("sacco_collections")
 }

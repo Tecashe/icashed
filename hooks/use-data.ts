@@ -236,6 +236,8 @@ export interface AdminStats {
   activeVehicles: number
   totalReports: number
   pendingReports: number
+  totalSaccos: number
+  activeSaccos: number
   recentUsers: {
     id: string
     name: string | null
@@ -291,4 +293,98 @@ export function useMyReports() {
   return useSWR<{
     reports: ReportData[]
   }>("/api/passenger/reports", fetcher)
+}
+
+// ─── SACCO Hooks ─────────────────────────────────────────────
+
+export function useMySacco() {
+  return useSWR<{
+    saccoId: string
+    sacco: {
+      id: string
+      name: string
+      code: string
+      county: string
+      town: string
+      phone: string | null
+      email: string | null
+      regNumber: string | null
+      chairman: string | null
+      secretary: string | null
+      isActive: boolean
+      description: string | null
+      _count: { memberships: number; vehicles: number; collections: number }
+    }
+    role: string
+  }>("/api/sacco/my", fetcher)
+}
+
+export function useSaccoStats(saccoId: string | null) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return useSWR<Record<string, any>>(saccoId ? `/api/sacco/${saccoId}/stats` : null, fetcher)
+}
+
+export function useSaccoMembers(
+  saccoId: string | null,
+  params?: { query?: string; page?: number }
+) {
+  const searchParams = new URLSearchParams()
+  if (params?.query) searchParams.set("query", params.query)
+  if (params?.page) searchParams.set("page", String(params.page))
+  const qs = searchParams.toString()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return useSWR<Record<string, any>>(
+    saccoId ? `/api/sacco/${saccoId}/members${qs ? `?${qs}` : ""}` : null,
+    fetcher
+  )
+}
+
+export function useSaccoVehicles(
+  saccoId: string | null,
+  params?: { query?: string; page?: number }
+) {
+  const searchParams = new URLSearchParams()
+  if (params?.query) searchParams.set("query", params.query)
+  if (params?.page) searchParams.set("page", String(params.page))
+  const qs = searchParams.toString()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return useSWR<Record<string, any>>(
+    saccoId ? `/api/sacco/${saccoId}/vehicles${qs ? `?${qs}` : ""}` : null,
+    fetcher
+  )
+}
+
+export function useSaccoCollections(
+  saccoId: string | null,
+  params?: { vehicleId?: string; from?: string; to?: string; page?: number }
+) {
+  const searchParams = new URLSearchParams()
+  if (params?.vehicleId) searchParams.set("vehicleId", params.vehicleId)
+  if (params?.from) searchParams.set("from", params.from)
+  if (params?.to) searchParams.set("to", params.to)
+  if (params?.page) searchParams.set("page", String(params.page))
+  const qs = searchParams.toString()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return useSWR<Record<string, any>>(
+    saccoId ? `/api/sacco/${saccoId}/collections${qs ? `?${qs}` : ""}` : null,
+    fetcher
+  )
+}
+
+// ─── Admin SACCO Management ─────────────────────────────────
+
+export function useAdminSaccos(params?: { query?: string; page?: number }) {
+  const searchParams = new URLSearchParams()
+  if (params?.query) searchParams.set("query", params.query)
+  if (params?.page) searchParams.set("page", String(params.page))
+  const qs = searchParams.toString()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return useSWR<Record<string, any>>(`/api/admin/saccos${qs ? `?${qs}` : ""}`, fetcher)
+}
+
+// ─── Admin Analytics ─────────────────────────────────────────
+
+export function useAdminAnalytics() {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return useSWR<Record<string, any>>("/api/admin/analytics", fetcher)
 }
