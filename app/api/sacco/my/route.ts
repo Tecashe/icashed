@@ -14,7 +14,6 @@ export async function GET() {
         const membership = await prisma.saccoMembership.findFirst({
             where: {
                 userId: user.id,
-                role: { in: ["CHAIRMAN", "SECRETARY", "TREASURER"] },
                 isActive: true,
             },
             include: {

@@ -33,9 +33,31 @@ export async function POST(request: NextRequest) {
         email,
         name,
         passwordHash,
-        role: role as "COMMUTER" | "OPERATOR",
+        role: role as "COMMUTER" | "OPERATOR" | "ADMIN" | "SACCO_ADMIN",
       },
     })
+
+    // If SACCO_ADMIN, auto-create a starter SACCO and membership
+    if (role === "SACCO_ADMIN") {
+      const code = name.replace(/\s+/g, "").substring(0, 6).toUpperCase()
+      const sacco = await prisma.sacco.create({
+        data: {
+          name: `${name}'s SACCO`,
+          code: `${code}-${Date.now().toString(36).toUpperCase()}`,
+          county: "—",
+          town: "—",
+          chairman: name,
+        },
+      })
+
+      await prisma.saccoMembership.create({
+        data: {
+          userId: user.id,
+          saccoId: sacco.id,
+          role: "CHAIRMAN",
+        },
+      })
+    }
 
     // Create session
     await createSession(user.id)

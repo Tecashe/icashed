@@ -9,7 +9,7 @@ export interface AuthUser {
   id: string
   email: string
   name: string | null
-  role: "COMMUTER" | "OPERATOR" | "ADMIN"
+  role: "COMMUTER" | "OPERATOR" | "ADMIN" | "SACCO_ADMIN"
   phone: string | null
   avatarUrl: string | null
 }

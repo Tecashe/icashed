@@ -20,6 +20,7 @@ import { useAuth } from "@/lib/auth-context"
 const ROLE_DASHBOARD: Record<string, string> = {
   COMMUTER: "/dashboard/passenger",
   OPERATOR: "/dashboard/driver",
+  SACCO_ADMIN: "/dashboard/sacco",
   ADMIN: "/dashboard/admin",
 }
 
@@ -160,10 +161,36 @@ export function AuthForm({ mode }: AuthFormProps) {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="COMMUTER">
-                    Commuter / Passenger
+                    <span className="flex flex-col">
+                      <span>Commuter / Passenger</span>
+                      <span className="text-xs text-muted-foreground">
+                        Find routes, track vehicles, share journeys
+                      </span>
+                    </span>
                   </SelectItem>
                   <SelectItem value="OPERATOR">
-                    Driver / Vehicle Operator
+                    <span className="flex flex-col">
+                      <span>Driver / Vehicle Operator</span>
+                      <span className="text-xs text-muted-foreground">
+                        Manage vehicles, broadcast position, track earnings
+                      </span>
+                    </span>
+                  </SelectItem>
+                  <SelectItem value="SACCO_ADMIN">
+                    <span className="flex flex-col">
+                      <span>SACCO Administrator</span>
+                      <span className="text-xs text-muted-foreground">
+                        Manage members, vehicles, routes & collections
+                      </span>
+                    </span>
+                  </SelectItem>
+                  <SelectItem value="ADMIN">
+                    <span className="flex flex-col">
+                      <span>Platform Administrator</span>
+                      <span className="text-xs text-muted-foreground">
+                        Full platform oversight, analytics & management
+                      </span>
+                    </span>
                   </SelectItem>
                 </SelectContent>
               </Select>
