@@ -184,14 +184,14 @@ export function AuthForm({ mode }: AuthFormProps) {
                       </span>
                     </span>
                   </SelectItem>
-                  <SelectItem value="ADMIN">
+                  {/* <SelectItem value="ADMIN">
                     <span className="flex flex-col">
                       <span>Platform Administrator</span>
                       <span className="text-xs text-muted-foreground">
                         Full platform oversight, analytics & management
                       </span>
                     </span>
-                  </SelectItem>
+                  </SelectItem> */}
                 </SelectContent>
               </Select>
             </div>
