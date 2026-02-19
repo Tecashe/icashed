@@ -245,6 +245,23 @@ export interface AdminStats {
     role: string
     createdAt: string
   }[]
+  kpi?: {
+    newUsersThisWeek: number
+    newUsersThisMonth: number
+    userGrowthPercent: number
+    premiumVehicles: number
+    regularVehicles: number
+    totalReviews: number
+    avgRating: number
+    reviewTags: { tag: string; count: number }[]
+    resolutionRate: number
+    reportsResolvedThisMonth: number
+    totalReportsThisMonth: number
+    vehicleTypeDistribution: { name: string; value: number }[]
+    reportTypeDistribution: { name: string; value: number }[]
+    reportStatusDistribution: { name: string; value: number }[]
+    roleDistribution: { name: string; value: number }[]
+  }
 }
 
 export function useAdminStats() {

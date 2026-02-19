@@ -2,8 +2,11 @@
 
 import { useState } from "react"
 import { useVehicles } from "@/hooks/use-data"
+import { apiPatch, apiDelete } from "@/lib/api-client"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
+import { Button } from "@/components/ui/button"
+import { Switch } from "@/components/ui/switch"
 import {
   Select,
   SelectContent,
@@ -11,18 +14,61 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Bus, Search, Loader2, Star, Navigation } from "lucide-react"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
+import { Bus, Search, Loader2, Star, Trash2 } from "lucide-react"
 import { VEHICLE_TYPE_LABELS } from "@/lib/constants"
+import { toast } from "sonner"
 
 export default function AdminVehiclesPage() {
   const [search, setSearch] = useState("")
   const [type, setType] = useState("all")
-  const { data, isLoading } = useVehicles({
+  const { data, isLoading, mutate } = useVehicles({
     query: search || undefined,
     type: type !== "all" ? type : undefined,
     limit: 50,
   })
   const vehicles = data?.vehicles || []
+
+  const [togglingId, setTogglingId] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+
+  async function handleToggleActive(vehicleId: string, currentActive: boolean) {
+    setTogglingId(vehicleId)
+    try {
+      await apiPatch(`/api/admin/vehicles/${vehicleId}`, { isActive: !currentActive })
+      mutate()
+      toast.success(currentActive ? "Vehicle deactivated" : "Vehicle activated")
+    } catch {
+      toast.error("Failed to toggle vehicle status")
+    } finally {
+      setTogglingId(null)
+    }
+  }
+
+  async function handleDelete(vehicleId: string) {
+    setDeletingId(vehicleId)
+    try {
+      await apiDelete(`/api/admin/vehicles/${vehicleId}`)
+      toast.success("Vehicle deleted")
+      mutate()
+    } catch (err) {
+      toast.error("Failed to delete vehicle", {
+        description: err instanceof Error ? err.message : "Please try again",
+      })
+    } finally {
+      setDeletingId(null)
+    }
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -31,7 +77,7 @@ export default function AdminVehiclesPage() {
           Vehicle Management
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          View all registered vehicles on the platform.
+          Manage vehicles — toggle active status or remove.
         </p>
       </div>
 
@@ -73,7 +119,8 @@ export default function AdminVehiclesPage() {
                 <th className="hidden px-4 py-3 font-medium text-muted-foreground md:table-cell">Routes</th>
                 <th className="hidden px-4 py-3 font-medium text-muted-foreground sm:table-cell">Rating</th>
                 <th className="hidden px-4 py-3 font-medium text-muted-foreground sm:table-cell">Trips</th>
-                <th className="px-4 py-3 font-medium text-muted-foreground">Status</th>
+                <th className="px-4 py-3 font-medium text-muted-foreground">Active</th>
+                <th className="px-4 py-3 font-medium text-muted-foreground text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -107,17 +154,46 @@ export default function AdminVehiclesPage() {
                   </td>
                   <td className="hidden px-4 py-3 text-muted-foreground sm:table-cell">{vehicle.totalTrips}</td>
                   <td className="px-4 py-3">
-                    {vehicle.isActive ? (
-                      <div className="flex items-center gap-1.5">
-                        <span className="relative flex h-2 w-2">
-                          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
-                          <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
-                        </span>
-                        <span className="text-xs text-primary">Active</span>
-                      </div>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">Inactive</span>
-                    )}
+                    <Switch
+                      checked={vehicle.isActive}
+                      disabled={togglingId === vehicle.id}
+                      onCheckedChange={() => handleToggleActive(vehicle.id, vehicle.isActive)}
+                    />
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center justify-end">
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0 text-destructive hover:text-destructive"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Delete Vehicle</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              Delete <strong>{vehicle.plateNumber}</strong>? All associated data will be
+                              removed. This cannot be undone.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction
+                              onClick={() => handleDelete(vehicle.id)}
+                              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                              disabled={deletingId === vehicle.id}
+                            >
+                              {deletingId === vehicle.id && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                              Delete
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    </div>
                   </td>
                 </tr>
               ))}
