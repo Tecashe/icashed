@@ -1,6 +1,8 @@
 "use client"
 
-import { useAdminStats } from "@/hooks/use-data"
+import { useMemo } from "react"
+import { useAdminStats, useRoutes } from "@/hooks/use-data"
+import { useRealtimePositions } from "@/hooks/use-realtime-positions"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -20,9 +22,12 @@ import {
   Zap,
   CheckCircle2,
   UserPlus,
+  Map as MapIcon,
+  Gauge,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
+import { cn } from "@/lib/utils"
 import {
   ResponsiveContainer,
   PieChart,
@@ -136,6 +141,33 @@ function DonutLegend({ data, colors, labelMap }: { data: { name: string; value: 
 
 export default function AdminDashboardPage() {
   const { data, isLoading } = useAdminStats()
+  const { positions: allPositions, isRealtime } = useRealtimePositions()
+  const { data: routesData } = useRoutes({ limit: 100 })
+  const routes = routesData?.routes || []
+
+  // Live fleet calculations
+  const fleetSummary = useMemo(() => {
+    const total = allPositions.length
+    const moving = allPositions.filter((p) => p.position.speed > 5).length
+    const avgSpeed = total > 0 ? Math.round(allPositions.reduce((s, p) => s + p.position.speed, 0) / total) : 0
+
+    const byRoute = new Map<string, { name: string; color: string; count: number }>()
+    allPositions.forEach((p) => {
+      p.routes.forEach((r) => {
+        const e = byRoute.get(r.id)
+        if (e) e.count++
+        else byRoute.set(r.id, { name: r.name, color: r.color || '#10B981', count: 1 })
+      })
+    })
+
+    return {
+      total,
+      moving,
+      stopped: total - moving,
+      avgSpeed,
+      topRoutes: Array.from(byRoute.values()).sort((a, b) => b.count - a.count).slice(0, 6),
+    }
+  }, [allPositions])
 
   if (isLoading) {
     return (
@@ -483,6 +515,114 @@ export default function AdminDashboardPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Live Fleet Status */}
+      <Card className="relative overflow-hidden border-primary/20">
+        <div className="absolute inset-0 bg-gradient-to-br from-primary/[0.03] via-transparent to-accent/[0.03] pointer-events-none" />
+        <CardHeader className="flex flex-row items-center justify-between pb-3">
+          <CardTitle className="font-display text-base flex items-center gap-2">
+            <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-primary to-primary/70 flex items-center justify-center">
+              <MapIcon className="h-4 w-4 text-primary-foreground" />
+            </div>
+            Live Fleet Status
+            <Badge
+              variant={isRealtime ? "default" : "secondary"}
+              className={cn(
+                "text-[10px] ml-2",
+                isRealtime && "bg-green-500/15 text-green-600 border-green-500/30"
+              )}
+            >
+              <span className={cn(
+                "w-1.5 h-1.5 rounded-full mr-1",
+                isRealtime ? "bg-green-500 animate-pulse" : "bg-muted-foreground"
+              )} />
+              {isRealtime ? "Live" : "Connecting"}
+            </Badge>
+          </CardTitle>
+          <Button variant="ghost" size="sm" asChild>
+            <Link href="/dashboard/admin/map" className="flex items-center gap-1 text-xs">
+              Open Map <ChevronRight className="h-3 w-3" />
+            </Link>
+          </Button>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 mb-4">
+            <div className="rounded-xl border border-border/50 bg-card p-3 relative overflow-hidden">
+              <div className="absolute -top-2 -right-2 h-10 w-10 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 opacity-10 blur-md" />
+              <div className="flex items-center gap-2">
+                <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center">
+                  <Bus className="h-4 w-4 text-white" />
+                </div>
+                <div>
+                  <p className="text-[10px] text-muted-foreground">Tracked</p>
+                  <p className="text-lg font-bold">{fleetSummary.total}</p>
+                </div>
+              </div>
+            </div>
+            <div className="rounded-xl border border-border/50 bg-card p-3 relative overflow-hidden">
+              <div className="absolute -top-2 -right-2 h-10 w-10 rounded-full bg-gradient-to-br from-green-500 to-green-600 opacity-10 blur-md" />
+              <div className="flex items-center gap-2">
+                <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-green-500 to-green-600 flex items-center justify-center">
+                  <Zap className="h-4 w-4 text-white" />
+                </div>
+                <div>
+                  <p className="text-[10px] text-muted-foreground">Moving</p>
+                  <p className="text-lg font-bold">{fleetSummary.moving}</p>
+                </div>
+              </div>
+            </div>
+            <div className="rounded-xl border border-border/50 bg-card p-3 relative overflow-hidden">
+              <div className="absolute -top-2 -right-2 h-10 w-10 rounded-full bg-gradient-to-br from-amber-500 to-amber-600 opacity-10 blur-md" />
+              <div className="flex items-center gap-2">
+                <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-amber-500 to-amber-600 flex items-center justify-center">
+                  <Activity className="h-4 w-4 text-white" />
+                </div>
+                <div>
+                  <p className="text-[10px] text-muted-foreground">Stopped</p>
+                  <p className="text-lg font-bold">{fleetSummary.stopped}</p>
+                </div>
+              </div>
+            </div>
+            <div className="rounded-xl border border-border/50 bg-card p-3 relative overflow-hidden">
+              <div className="absolute -top-2 -right-2 h-10 w-10 rounded-full bg-gradient-to-br from-purple-500 to-purple-600 opacity-10 blur-md" />
+              <div className="flex items-center gap-2">
+                <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-purple-500 to-purple-600 flex items-center justify-center">
+                  <Gauge className="h-4 w-4 text-white" />
+                </div>
+                <div>
+                  <p className="text-[10px] text-muted-foreground">Avg Speed</p>
+                  <p className="text-lg font-bold">{fleetSummary.avgSpeed} <span className="text-xs font-normal text-muted-foreground">km/h</span></p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Top routes */}
+          {fleetSummary.topRoutes.length > 0 && (
+            <div>
+              <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">Top Active Routes</p>
+              <div className="grid grid-cols-2 gap-2 lg:grid-cols-3">
+                {fleetSummary.topRoutes.map((r, i) => (
+                  <div key={i} className="flex items-center gap-2 p-2 rounded-lg bg-muted/50 hover:bg-muted transition-colors">
+                    <div className="h-3 w-3 rounded-full flex-shrink-0" style={{ backgroundColor: r.color }} />
+                    <span className="text-xs font-medium truncate flex-1">{r.name}</span>
+                    <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
+                      <Bus className="h-2.5 w-2.5 mr-0.5" />
+                      {r.count}
+                    </Badge>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {fleetSummary.total === 0 && (
+            <p className="text-center text-sm text-muted-foreground py-4">
+              No vehicles are currently being tracked
+            </p>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Recent Users */}
       <Card>

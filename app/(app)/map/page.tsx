@@ -1,5 +1,5 @@
 import type { Metadata } from "next"
-import { LiveMapView } from "@/components/map/live-map-view"
+import { MapPageClient } from "./client"
 
 export const metadata: Metadata = {
   title: "Live Map",
@@ -8,5 +8,5 @@ export const metadata: Metadata = {
 }
 
 export default function MapPage() {
-  return <LiveMapView />
+  return <MapPageClient />
 }
